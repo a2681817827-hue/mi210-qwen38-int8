@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "repositories": [
+    {
+      "url": "https://github.com/davetha/aiter-cdna2",
+      "ref": "v1.6",
+      "commit": "1552f41046b6000e766497f8638084de3208e154",
+      "license": "MIT"
+    },
+    {
+      "url": "https://github.com/davetha/vllm-int8-moe-rocm",
+      "commit": "a44649000dfb6401c52a4fde21240086d87fc6cc",
+      "license": "MIT"
+    },
+    {
+      "url": "https://github.com/davetha/mi210-llm-stack",
+      "commit": "eb0484d00a2e21ea1f1314de2b533718258b9499",
+      "role": "measurement journal; selectively adopted deployment findings"
+    },
+    {
+      "url": "https://github.com/davetha/mi210-vllm",
+      "commit": "8a8488801bd0122069e0653cb63ede979e22d29b",
+      "license": "Apache-2.0"
+    },
+    {
+      "url": "https://github.com/jebchowDCGPU/vllm-mi210",
+      "commit": "77713c922bddc149fce8236d123b14c96d092c7a",
+      "license": "Apache-2.0",
+      "role": "audited; FP8/MTP precision and checkpoint replacements excluded from INT8 DFlash2 recipe"
+    }
+  ],
+  "vllm_patch_source": {
+    "url": "https://github.com/davetha/vllm",
+    "ref": "v0.28.1rc0+mi210.7",
+    "commit": "fcba99756ff2824c81e71460dee7f8fc0fd93bdf"
+  },
+  "aiter_checkout_source": {
+    "url": "https://github.com/curvedinf/int8-aiter",
+    "commit": "83e07b940af9c75d99a9f6ac747604a16a9412a7",
+    "path_in_image": "/opt/aiter",
+    "installed_with_pip": false
+  },
+  "patches": [
+    {
+      "name": "ck-int8-gfx90a",
+      "status": "adapted",
+      "files": [
+        "docker/mi210/apply_aiter.py",
+        "vllm/_aiter_ops.py",
+        "vllm/model_executor/kernels/linear/scaled_mm/aiter.py"
+      ],
+      "verify": "qualify.py codegen + verify_ck.py numerical reference"
+    },
+    {
+      "name": "int8-moe-rocm",
+      "status": "already_present",
+      "files": [
+        "vllm/model_executor/layers/fused_moe/experts/triton_moe.py"
+      ],
+      "note": "Current fork already admits ROCm dynamic INT8; do not reapply an obsolete CUDA-only anchor."
+    },
+    {
+      "name": "paged-attention-long-context-and-free-kernel-guards",
+      "status": "existing_local_port",
+      "verify": "tests/kernels/attention/test_rocm_paged_attention_long_context.py"
+    },
+    {
+      "name": "free-paged-attention-block-offsets",
+      "status": "existing_local_port_default_conservative",
+      "verify": "tests/kernels/attention/test_rocm_free_paged_attention_block_sizes.py"
+    },
+    {
+      "name": "triton-decode-sequence-partition",
+      "status": "existing_local_port_gfx90a_only",
+      "verify": "tests/kernels/attention/test_triton_paged_decode_seq_partition.py"
+    },
+    {
+      "name": "triton-spec-verify-context-partition",
+      "status": "existing_local_port_gfx90a_only",
+      "verify": "tests/kernels/attention/test_triton_verify_ctx_partition.py",
+      "note": "These ROCM_ATTN fallback optimizations do not automatically accelerate the grouped INT8 unified backend."
+    },
+    {
+      "name": "wvSplitK-singleton-stride-guard",
+      "status": "existing_local_port",
+      "verify": "tests/model_executor/layers/test_rocm_unquantized_gemm.py"
+    },
+    {
+      "name": "sharded-state-tp-mismatch",
+      "status": "existing_local_port",
+      "verify": "tests/model_executor/model_loader/test_sharded_state_loader.py"
+    },
+    {
+      "name": "int4-interleave-and-gfx90a-W4A16-tiles",
+      "status": "existing_local_port_alternate_checkpoints",
+      "verify": "tests/kernels/moe/test_moe.py; not selected for the PTQR INT8 recipe"
+    },
+    {
+      "name": "weight-only-FP8-and-NVFP4-fallback",
+      "status": "existing_local_port_alternate_checkpoints",
+      "verify": "tests/kernels/quantization/test_nvfp4_w4a16_gfx90a.py",
+      "note": "No claim of native FP8/FP4 arithmetic on gfx90a."
+    },
+    {
+      "name": "grouped-int8-unified-backend-compatibility",
+      "status": "adapted",
+      "verify": "test_port.py + tests/kernels/attention/test_mi210_grouped_int8.py"
+    },
+    {
+      "name": "BF16-ASM-flash-attention",
+      "status": "optional_build_candidate",
+      "note": "ENABLE_BF16_ASM=1 generates translated assets and narrow AITER source gates; hardware numeric gate required before routing serving traffic. PTQR grouped INT8 keeps its own attention path."
+    },
+    {
+      "name": "fused-gdn-decode-cdna",
+      "status": "deferred",
+      "note": "Post-tag source has no in-tree numeric harness; this fork already has recurrent-state and speculative-verification fixes. Do not substitute it without a matched fidelity gate."
+    },
+    {
+      "name": "MoE-tuned-configs",
+      "status": "not_adopted",
+      "note": "Source tuning manifest ships zero proven-better configs; decode-only M coverage can regress prefill."
+    },
+    {
+      "name": "llama.cpp-KIVI-TurboQuant-CPU-expert-cache",
+      "status": "not_portable_to_this_backend",
+      "note": "Different engine/storage contract; importing its settings is not a vLLM implementation."
+    },
+    {
+      "name": "single-and-dual-card-deployment",
+      "status": "candidate",
+      "verify": "serve_mi210.sh + profiles.json + router.py; local quality and performance gates pending"
+    },
+    {
+      "name": "mixed-gpu-render-node-isolation",
+      "status": "adapted_cpu_and_single_gpu_verified",
+      "source": "davetha/mi210-vllm/gpu-nodes.sh",
+      "files": [
+        "scripts/mi210_gpu_nodes.sh",
+        "scripts/serve_mi210.sh",
+        "scripts/serve_mi210_32k_ab.sh",
+        "docker/mi210/test_gpu_nodes.py"
+      ],
+      "verify": "test_gpu_nodes.py + test_port.PortTests",
+      "note": "TP1 exposes one gfx90a render node with HIP_VISIBLE_DEVICES=0. Mixed-GPU hardware was not tested."
+    }
+  ],
+  "hardware_validated": true,
+  "performance_claim": null,
+  "local_validation": {
+    "date": "2026-10-03",
+    "gpu_count": 1,
+    "arch": "gfx90a",
+    "numeric_tier": 2,
+    "numeric_result": "PASS",
+    "grouped_int8_32k_reference": "14 PASS",
+    "integration_tests": "12 PASS",
+    "single_card_c1_c8_measured": true,
+    "text_vision_30k_smoke": "PASS",
+    "full_fidelity": "NOT_RUN",
+    "two_card": "NOT_RUN",
+    "report": "docs/recipes/mi210_local_results_20261003.md",
+    "selected_attention_3d_maxq": 16,
+    "long_context_decode_measured": true
+  },
+  "continuation_validation": {
+    "date": "2026-10-05",
+    "gpu_count": 1,
+    "arch": "gfx90a",
+    "base_image": "sha256:8df86c75bfb56d3654bca7dee59838c323b6250eb7649a0f28de9c13c930d79a",
+    "candidate_image": "sha256:7d2ad6558a805294364bd629268f1b9a8f568ab32e791c74a46979f00ce6c847",
+    "cpu_tests": "39 PASS",
+    "ck_and_grouped_int8": "PASS",
+    "long_boundaries": 12,
+    "split_operator_and_replay_cases": 75,
+    "query_operator_cases": 32,
+    "query_graph_cases": 6,
+    "head_numeric_shapes": 4,
+    "serving_comparison": "PAUSED_USER_REQUEST",
+    "full_fidelity": "NOT_RUN",
+    "two_card": "NOT_RUN",
+    "artifacts": "logs/mi210/continue-20261005",
+    "ck_tuning": {
+      "attempts": 784,
+      "pass": 196,
+      "unsupported": 588,
+      "selected_shapes": 7,
+      "kernel_id": 34,
+      "serving_validation": "MEASURED_SELECTION_PENDING"
+    },
+    "mtp": {
+      "ns3_graph_prefix": "GPU_WRITE_FAULT_WARMUP",
+      "ns1_eager_no_prefix": "52/52 answer probes PASS; about 17 token/s; screened out"
+    },
+    "handoff": "docs/recipes/mi210_handoff_20261005.md",
+    "best_long_generation_median_tps": 94.52,
+    "goal_100_120": "NOT_ACHIEVED"
+  },
+  "research_candidates": [
+    {
+      "repository": "https://github.com/davetha/qsa-cdna2-vllm-patches",
+      "commit": "bf1e73bd866f455e8511e2c1dc34583a46e5cf45",
+      "status": "INT8_QK_GPU_GATES_PENDING",
+      "use": "Reference for INT8 query quantization and direct I8 QK MFMA; adapted to separate G128 scales in the existing native target decode core",
+      "excluded": "QSA-specific cache layout, sparse indexer, W4A16 model, and TP2 results are not used as this model performance claims"
+    }
+  ]
+}

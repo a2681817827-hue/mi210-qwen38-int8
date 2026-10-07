@@ -1,0 +1,61 @@
+{
+  "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+  "engine_patch_base": "5226dbdbd055b645e0a2e972ddb54e97b839858b",
+  "files": [
+    {
+      "path": "vllm/platforms/rocm.py",
+      "sha256": "1e31798aec5b0de15a7bb7a3e0765342c258c1e5741b4adf21ebc357bba8118c",
+      "new_file": false
+    },
+    {
+      "path": "vllm/_aiter_ops.py",
+      "sha256": "8db640de1e3c36563f52fc7dc026a05f3e8cde00e198c65b40b5aa78fec1ecd3",
+      "new_file": false
+    },
+    {
+      "path": "vllm/model_executor/kernels/linear/scaled_mm/aiter.py",
+      "sha256": "75df01780ffd70ba6597f421d8f4d080412b27164e294192427df19a7894883b",
+      "new_file": false
+    },
+    {
+      "path": "vllm/model_executor/layers/vocab_parallel_embedding.py",
+      "sha256": "86088c7bdd39208d530af50fee174a9f738b451245245e47372dcc9586b55900",
+      "new_file": false
+    },
+    {
+      "path": "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py",
+      "sha256": "7a14cfc189e8accb70ffcc9d7c3aee4f579b11d7b4901e565b8ef92d26387ad9",
+      "new_file": false
+    },
+    {
+      "path": "vllm/model_executor/layers/mamba/gdn/mi210_native_gdn.py",
+      "sha256": "a237d4e184518dcd6406e86742b95376f4d522b39fe5cf72f98e73e1f6f93904",
+      "new_file": true
+    },
+    {
+      "path": "vllm/v1/attention/backends/rocm_aiter_unified_attn.py",
+      "sha256": "ebd3a95b03c1466de994d9c61d3fcee0df138a4d5ff5be787fc8a10d3ff4c91e",
+      "new_file": false
+    },
+    {
+      "path": "vllm/v1/attention/ops/triton_unified_attention.py",
+      "sha256": "abb474dcf83579af85032b1789739b44e6c6adff47b1461f9688fcb382e5bcd2",
+      "new_file": false
+    },
+    {
+      "path": "vllm/v1/attention/ops/gfx90a_g128_gluon_decode.py",
+      "sha256": "bd0b1f52a51dda3854c27802885ff6b1f7ee02c7e3bb042487bf067b60126cec",
+      "new_file": true
+    },
+    {
+      "path": "vllm/v1/attention/ops/gfx90a_g128_gluon_prefill.py",
+      "sha256": "6eeaa9bc0aeddf293d133029ff8bfe7afeec15983f3853afbff2cfaf21750e0e",
+      "new_file": true
+    },
+    {
+      "path": "vllm/v1/attention/ops/mi210_split_tuning.py",
+      "sha256": "df8ee6f992474c28007bd7cfc5683649f9dcf7d1464f4bf715c9e2fd90560105",
+      "new_file": true
+    }
+  ]
+}

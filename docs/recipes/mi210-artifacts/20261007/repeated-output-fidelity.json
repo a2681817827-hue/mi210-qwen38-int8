@@ -1,0 +1,327 @@
+{
+  "scope": "52 diverse prompts; shared-history top-20 coarsened KL",
+  "limitation": "Lower bound on full-vocabulary KL; divergent histories excluded. This is not a downstream task accuracy benchmark.",
+  "reference_image": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+  "candidate_image": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+  "exact_greedy_token_sequences": 52,
+  "total_prompts": 52,
+  "comparable_positions": 5909,
+  "mean_coarsened_kl": 0.0,
+  "comparable_post_prefill_positions": 5857,
+  "median_coarsened_kl": 0.0,
+  "minimum_common_token_support": 20,
+  "positions": [
+    {
+      "index": 0,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 1,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 2,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 3,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 4,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 5,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 6,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 7,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 8,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 9,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 10,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 11,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 12,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 13,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 14,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 15,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 16,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 17,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 18,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 19,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 20,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 21,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 22,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 23,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 24,
+      "comparable_positions": 6,
+      "reference_tokens": 6,
+      "candidate_tokens": 6
+    },
+    {
+      "index": 25,
+      "comparable_positions": 49,
+      "reference_tokens": 49,
+      "candidate_tokens": 49
+    },
+    {
+      "index": 26,
+      "comparable_positions": 48,
+      "reference_tokens": 48,
+      "candidate_tokens": 48
+    },
+    {
+      "index": 27,
+      "comparable_positions": 43,
+      "reference_tokens": 43,
+      "candidate_tokens": 43
+    },
+    {
+      "index": 28,
+      "comparable_positions": 3,
+      "reference_tokens": 3,
+      "candidate_tokens": 3
+    },
+    {
+      "index": 29,
+      "comparable_positions": 10,
+      "reference_tokens": 10,
+      "candidate_tokens": 10
+    },
+    {
+      "index": 30,
+      "comparable_positions": 103,
+      "reference_tokens": 103,
+      "candidate_tokens": 103
+    },
+    {
+      "index": 31,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 32,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 33,
+      "comparable_positions": 15,
+      "reference_tokens": 15,
+      "candidate_tokens": 15
+    },
+    {
+      "index": 34,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 35,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 36,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 37,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 38,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 39,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 40,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 41,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 42,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 43,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 44,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 45,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 46,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 47,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 48,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 49,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 50,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    },
+    {
+      "index": 51,
+      "comparable_positions": 128,
+      "reference_tokens": 128,
+      "candidate_tokens": 128
+    }
+  ]
+}

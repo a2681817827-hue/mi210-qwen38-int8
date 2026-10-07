@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "engine_base": "5226dbdbd055b645e0a2e972ddb54e97b839858b",
+  "source_files_identical": 11,
+  "scope": "Patch applies and reproduces source snapshots; not a new full-stack GPU build"
+}

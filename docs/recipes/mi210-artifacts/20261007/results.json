@@ -1,0 +1,2845 @@
+{
+  "status": "OPTIMIZATION_IN_PROGRESS",
+  "target_long_generation_tps": 120,
+  "next_gate_tps": 110,
+  "metric": "Median C1 streaming generation estimate excluding TTFT; 48081 input and 512 output tokens; TP1",
+  "hardware": "One AMD MI210 gfx90a 64GB; 300W cap; 1600MHz HBM",
+  "software": {
+    "torch": "2.13.0+git733fca1",
+    "hip": "7.2.53211",
+    "triton": "3.8.0"
+  },
+  "local_source_base": "5226dbdbd055b645e0a2e972ddb54e97b839858b",
+  "constraints": "GPTQ INT8 W8A8 GS128 target and draft, int8_block_g128 KV on both, BF16 residual compute, FP32 Mamba state, NS13, graph-c8 capture",
+  "rows": [
+    {
+      "label": "winner-split32",
+      "image_id": "sha256:8f90e64af473aa088456b7df7a64348bd253e857c4ca19a6becb5e7960e7269d",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_FLASH_SPLITS": "32"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 50
+      },
+      "campaign": "continue-120tok-recovery2",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            131.93014450104292,
+            131.8577898698847,
+            131.88232006149042,
+            127.31976054300932,
+            125.42552066231904
+          ],
+          "median_wall": 131.8577898698847,
+          "generation_estimates": [
+            138.12717727422185,
+            137.99661094904016,
+            138.10098971124904,
+            137.97994949685418,
+            138.08729088919515,
+            138.03553939279192,
+            138.0899785733964,
+            138.00216809563526,
+            138.1361100523325,
+            138.0116223924717,
+            138.16047047835548,
+            138.02652435999863,
+            136.62679478625415,
+            132.93762047662685,
+            131.71952594483628,
+            131.57893591678234,
+            131.2336526238899,
+            131.0493532300249,
+            131.1442097161939,
+            130.9855288904973
+          ],
+          "median_generation": 137.9993895223377,
+          "ttft": [
+            0.17088316999979725,
+            0.18123427599948627,
+            0.18186992699975235,
+            0.18120937599996978,
+            0.1804493999998158,
+            0.18285804900006042,
+            0.17970563000017137,
+            0.18125649600006,
+            0.1815424520000306,
+            0.18246231000011903,
+            0.1806877409999288,
+            0.17992873200000759,
+            0.18821108099928097,
+            0.18168419700032246,
+            0.1833418010000969,
+            0.18332709800051816,
+            0.18316649899952608,
+            0.18243453499962925,
+            0.18448929399983172,
+            0.18561486699945817
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "57fefb00ae37bcdccc560c3d38846951b7d07244d1be9323085b4d5702fb9b83"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1920.0,
+            "draft_tokens": 24960.0,
+            "accepted_tokens": 8500.0,
+            "accepted_fraction": 0.3405448717948718,
+            "mean_accepted_per_draft": 4.427083333333333
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.656194801928168,
+            11.97708694477963,
+            54.1929509707276,
+            54.26835675833623,
+            54.27817320981982
+          ],
+          "median_wall": 54.1929509707276,
+          "generation_estimates": [
+            85.43312058065078,
+            85.42878468857619,
+            85.38540794397721,
+            85.47879450781534,
+            85.49824732314913
+          ],
+          "median_generation": 85.43312058065078,
+          "ttft": [
+            37.9432457769999,
+            36.766207349999604,
+            3.4625159189999977,
+            3.4560323040004732,
+            3.4556728530005785
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "f2fbda4bd73a64b4a0191dc2225ab7cd470de4495ee724fa24307899b9049821"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 530.0,
+            "draft_tokens": 6890.0,
+            "accepted_tokens": 2035.0,
+            "accepted_fraction": 0.295355587808418,
+            "mean_accepted_per_draft": 3.839622641509434
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "partitioned-ck",
+      "image_id": "sha256:8f90e64af473aa088456b7df7a64348bd253e857c4ca19a6becb5e7960e7269d",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "continue-120tok-recovery2",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            182.92169672417813,
+            182.5341034535015,
+            182.46536254942492,
+            182.6781959449142,
+            176.72685975514707
+          ],
+          "median_wall": 182.5341034535015,
+          "generation_estimates": [
+            195.12237143438563,
+            194.80524822596834,
+            195.11159647551884,
+            194.82264657598688,
+            195.03712188490624,
+            194.77899263234917,
+            194.99981006212136,
+            194.79962412618707,
+            195.07254999709664,
+            194.83058301724358,
+            195.13551277913535,
+            194.80054993072693,
+            195.12191605263408,
+            194.83206201619868,
+            195.17613079441242,
+            194.7370820376793,
+            193.3670286720029,
+            189.2407719776864,
+            186.03005225643074,
+            184.73972651526546
+          ],
+          "median_generation": 194.82661479661522,
+          "ttft": [
+            0.16848236199984967,
+            0.18215512200004014,
+            0.1795101080006134,
+            0.1800616730015463,
+            0.17968782100069802,
+            0.18187928900078987,
+            0.18195969599946693,
+            0.18703361700136156,
+            0.19090293099907285,
+            0.1794234900007723,
+            0.18352465300085896,
+            0.18389585499971872,
+            0.18072149599902332,
+            0.18256869799915876,
+            0.17927248100022553,
+            0.18271088800065627,
+            0.1809486399997695,
+            0.18280716399931407,
+            0.18446448699978646,
+            0.18269351000162715
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2fac34a40b3ffef55817d053f8ddd4d0d557d1185b04bcec3401e202fcdb4bab"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1380.0,
+            "draft_tokens": 17940.0,
+            "accepted_tokens": 8860.0,
+            "accepted_fraction": 0.4938684503901895,
+            "mean_accepted_per_draft": 6.420289855072464
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.933774174525382,
+            12.279636778902896,
+            57.521634111845025,
+            57.554942087667165,
+            57.6022305858998
+          ],
+          "median_wall": 57.521634111845025,
+          "generation_estimates": [
+            93.97934415232392,
+            93.4934988477873,
+            93.62982895458433,
+            93.84918498635973,
+            93.64194058498728
+          ],
+          "median_generation": 93.64194058498728,
+          "ttft": [
+            37.46542213199973,
+            36.22893112700149,
+            3.4428612860010617,
+            3.4504246400010743,
+            3.431055289000142
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "9f46ef1ee54be747f9b9c630451255b421bf80435355dad5000f74372dd4c84d"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 485.0,
+            "draft_tokens": 6305.0,
+            "accepted_tokens": 2070.0,
+            "accepted_fraction": 0.3283108643933386,
+            "mean_accepted_per_draft": 4.268041237113402
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "control-repeat",
+      "image_id": "sha256:8f90e64af473aa088456b7df7a64348bd253e857c4ca19a6becb5e7960e7269d",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "continue-120tok-recovery2",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            159.26895113439684,
+            159.20849561085566,
+            159.16862963030448,
+            159.21056649608707,
+            155.55373222817326
+          ],
+          "median_wall": 159.20849561085566,
+          "generation_estimates": [
+            168.1709239326575,
+            168.11806772528038,
+            168.07581556523155,
+            168.11342492107502,
+            168.10807608336395,
+            168.1228318121904,
+            168.1437780585734,
+            168.12003934785054,
+            168.11656251786007,
+            168.10547091995025,
+            168.14376920617386,
+            168.17657294270458,
+            168.17690658737789,
+            168.19401794685223,
+            168.14979989327247,
+            168.18183082310816,
+            168.223125900021,
+            166.18371889291964,
+            162.07415950250538,
+            160.35569370685718
+          ],
+          "median_generation": 168.1214355800205,
+          "ttft": [
+            0.1604313160005404,
+            0.17749423299937916,
+            0.1791824540014204,
+            0.18166049000137718,
+            0.17645972699938284,
+            0.17680795200067223,
+            0.17609816000003775,
+            0.17469221000101243,
+            0.17679115900136821,
+            0.1778777719991922,
+            0.1767300030005572,
+            0.176797820999127,
+            0.17472028500014858,
+            0.17885292299979483,
+            0.17641583800104854,
+            0.17751801899976272,
+            0.17731997199916805,
+            0.17738929900042422,
+            0.1805959770008485,
+            0.17668717199921957
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "faee00d05776c3af42d965e5308f2d2c1638af1f4ed34143f18b3becab1aef96"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1520.0,
+            "draft_tokens": 19760.0,
+            "accepted_tokens": 8920.0,
+            "accepted_fraction": 0.451417004048583,
+            "mean_accepted_per_draft": 5.868421052631579
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.738170750759215,
+            12.061021925086418,
+            54.35492960373869,
+            54.36705512594483,
+            54.35764679682154
+          ],
+          "median_wall": 54.35492960373869,
+          "generation_estimates": [
+            86.16220119626523,
+            85.539552508803,
+            85.48292655354395,
+            85.47057627509581,
+            85.52646296894422
+          ],
+          "median_generation": 85.52646296894422,
+          "ttft": [
+            37.68709736299934,
+            36.47646743199948,
+            3.441277617999731,
+            3.4383228799997596,
+            3.443736466999326
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "5d19c438ab4ac3b18885797aa326947da56e2da674009540d5e8248f2d9b2818"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 500.0,
+            "draft_tokens": 6500.0,
+            "accepted_tokens": 2055.0,
+            "accepted_fraction": 0.3161538461538462,
+            "mean_accepted_per_draft": 4.11
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "ns15-repeat",
+      "image_id": "sha256:8f90e64af473aa088456b7df7a64348bd253e857c4ca19a6becb5e7960e7269d",
+      "settings": {
+        "SPEC_TOKENS": "15",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 51
+      },
+      "campaign": "continue-120tok-recovery2",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            114.10053382468418,
+            114.01798290189359,
+            111.96515295423337,
+            108.44279016728572,
+            108.38336705806563
+          ],
+          "median_wall": 111.96515295423337,
+          "generation_estimates": [
+            118.25134683707037,
+            118.82555630113146,
+            118.24863127760324,
+            118.8338058192025,
+            118.23686005058632,
+            118.8338826721282,
+            118.25018398398728,
+            118.85028062202078,
+            118.26210193822757,
+            118.55722076490939,
+            115.28098080242995,
+            113.39473002742052,
+            112.41758350982198,
+            112.9447860938757,
+            112.45634036081968,
+            112.88337354678342,
+            112.29466516398276,
+            112.81007882843328,
+            112.38489327001245,
+            112.737133694555
+          ],
+          "median_generation": 116.75892042650813,
+          "ttft": [
+            0.1624565869988146,
+            0.18161319899991213,
+            0.18031570200037095,
+            0.1793643009987136,
+            0.1794229160004761,
+            0.1800339299988991,
+            0.1784457809990272,
+            0.17927076100022532,
+            0.1792523500007519,
+            0.17935588299951633,
+            0.17996034099996905,
+            0.18082675299956463,
+            0.18144475599910947,
+            0.18310465099966677,
+            0.18535245999919425,
+            0.1931382239999948,
+            0.1864872469996044,
+            0.1844155429989769,
+            0.18232840500058956,
+            0.18101474799914286
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "6e432c1a48c6e07108a4740e6ce76e5de4c4f3ca3c736716cb3147cce43b7ebc"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 2160.0,
+            "draft_tokens": 32400.0,
+            "accepted_tokens": 8180.0,
+            "accepted_fraction": 0.25246913580246916,
+            "mean_accepted_per_draft": 3.787037037037037
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.972955933411095,
+            11.966962030257543,
+            52.61948652634658,
+            52.50043917001936,
+            52.60339150547199
+          ],
+          "median_wall": 52.50043917001936,
+          "generation_estimates": [
+            81.23309091384456,
+            81.27224816562033,
+            81.23733777681967,
+            81.4207901495003,
+            81.29816963087204
+          ],
+          "median_generation": 81.27224816562033,
+          "ttft": [
+            36.47169243099961,
+            36.49638942100137,
+            3.4394124499995087,
+            3.475651878001372,
+            3.4472289069999533
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "0af64a4c8c417c8d7ac16d637573eef7a935c6a4d4a2c7df7f3ef6de3c45bfa6"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 545.0,
+            "draft_tokens": 8175.0,
+            "accepted_tokens": 2015.0,
+            "accepted_fraction": 0.24648318042813455,
+            "mean_accepted_per_draft": 3.697247706422018
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "winner-control-after",
+      "image_id": "sha256:8f90e64af473aa088456b7df7a64348bd253e857c4ca19a6becb5e7960e7269d",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "continue-120tok-recovery2",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            179.23333914634372,
+            179.075720120591,
+            179.10283501278943,
+            177.8722925055713,
+            171.34491039243647
+          ],
+          "median_wall": 179.075720120591,
+          "generation_estimates": [
+            190.8696344951135,
+            190.35870174531436,
+            190.77721427092666,
+            190.36661090650105,
+            190.84277371057033,
+            190.46739741762485,
+            190.82880291026902,
+            190.38999609380153,
+            190.8368711311924,
+            190.41398800561387,
+            190.8268657038333,
+            190.54529945047165,
+            190.9080833756452,
+            190.46278960592286,
+            190.20469664188352,
+            185.99542098061204,
+            183.47775663476776,
+            182.0104441681783,
+            182.10665761920768,
+            181.63913029417088
+          ],
+          "median_generation": 190.43838880576837,
+          "ttft": [
+            0.16419687999950838,
+            0.17744815399964864,
+            0.1818588610003644,
+            0.17649427000105788,
+            0.17800609699952474,
+            0.17952576099924045,
+            0.1776215489990136,
+            0.1773704759998509,
+            0.18007003200000327,
+            0.17600044400023762,
+            0.17792392399860546,
+            0.17783014099950378,
+            0.18000546900111658,
+            0.1803137990009418,
+            0.1793532049996429,
+            0.1786030840012245,
+            0.1846151120007562,
+            0.1817833690001862,
+            0.18480684099995415,
+            0.18744488100128365
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2fac34a40b3ffef55817d053f8ddd4d0d557d1185b04bcec3401e202fcdb4bab"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1380.0,
+            "draft_tokens": 17940.0,
+            "accepted_tokens": 8860.0,
+            "accepted_fraction": 0.4938684503901895,
+            "mean_accepted_per_draft": 6.420289855072464
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.898125480717267,
+            11.8922413047237,
+            50.66626422954477,
+            50.629949430213955,
+            50.63196251878361
+          ],
+          "median_wall": 50.629949430213955,
+          "generation_estimates": [
+            76.68725580768262,
+            76.64875145699938,
+            76.66760313469497,
+            76.57767811868592,
+            76.6718711457728
+          ],
+          "median_generation": 76.66760313469497,
+          "ttft": [
+            36.36797427499914,
+            36.38573908200124,
+            3.439683081000112,
+            3.4391192929997487,
+            3.4467318469996826
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2d1a9ff376f90ed26e4d3ecc51084b8e5fe23b8d5678dc7a7b7e1fcbdd4fa0cb"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 590.0,
+            "draft_tokens": 7670.0,
+            "accepted_tokens": 1985.0,
+            "accepted_fraction": 0.2588005215123859,
+            "mean_accepted_per_draft": 3.364406779661017
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "q5-control-before",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "query5-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            181.5402803792536,
+            181.58215434087978,
+            181.43612392442324,
+            180.97485528416266,
+            172.91944991960716
+          ],
+          "median_wall": 181.43612392442324,
+          "generation_estimates": [
+            193.62005489812617,
+            193.23031981707595,
+            193.63727219097163,
+            193.17125184148978,
+            193.60663530488912,
+            193.18663814726966,
+            193.65095295915512,
+            193.22660311798668,
+            193.55998102311847,
+            193.15011969490106,
+            193.63435096975473,
+            193.23173180139685,
+            193.6789558608571,
+            193.19406452361926,
+            193.68368309060332,
+            191.08591305598497,
+            186.61413575880903,
+            183.68882165466957,
+            183.19831967325484,
+            182.6607165757942
+          ],
+          "median_generation": 193.2284614675313,
+          "ttft": [
+            0.16765968799882103,
+            0.18184363999898778,
+            0.18446374399900378,
+            0.17695744400043623,
+            0.17678538499967544,
+            0.1768805390001944,
+            0.17857578999974066,
+            0.17642638300094404,
+            0.17682966599932115,
+            0.1772911820007721,
+            0.17894530600096914,
+            0.18352729999969597,
+            0.1796087639995676,
+            0.17945079499986605,
+            0.17918572799862886,
+            0.18054722400120227,
+            0.18907955900067464,
+            0.18417789599880052,
+            0.18076916000063648,
+            0.1807899590003217
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2fac34a40b3ffef55817d053f8ddd4d0d557d1185b04bcec3401e202fcdb4bab"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1380.0,
+            "draft_tokens": 17940.0,
+            "accepted_tokens": 8860.0,
+            "accepted_fraction": 0.4938684503901895,
+            "mean_accepted_per_draft": 6.420289855072464
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.235683154904425,
+            12.189783585547833,
+            57.361298969146226,
+            57.408772739313605,
+            57.48076488242338
+          ],
+          "median_wall": 57.361298969146226,
+          "generation_estimates": [
+            93.569599511644,
+            93.47432110429217,
+            93.55260694000825,
+            93.547547272358,
+            93.53460264595358
+          ],
+          "median_generation": 93.547547272358,
+          "ttft": [
+            36.38305490399944,
+            36.534914920999654,
+            3.4632282199982,
+            3.4555426810002245,
+            3.44342944500022
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "9f46ef1ee54be747f9b9c630451255b421bf80435355dad5000f74372dd4c84d"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 485.0,
+            "draft_tokens": 6305.0,
+            "accepted_tokens": 2070.0,
+            "accepted_fraction": 0.3283108643933386,
+            "mean_accepted_per_draft": 4.268041237113402
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "ck-query5",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "query5-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            133.363050936275,
+            133.1959803203431,
+            133.15698958759836,
+            128.02794341093514,
+            126.48232787586849
+          ],
+          "median_wall": 133.15698958759836,
+          "generation_estimates": [
+            139.77070370978078,
+            139.5019712360233,
+            139.74424391341495,
+            139.50265929864005,
+            139.7824852788574,
+            139.50704406269486,
+            139.81457564976895,
+            139.54895441922363,
+            139.7189206336818,
+            139.49944632857742,
+            139.7815883577206,
+            139.52073107523452,
+            136.66940783150315,
+            133.68060110765114,
+            133.07710897683248,
+            132.57172343166897,
+            132.6276830134971,
+            132.01564421446668,
+            132.47012474900342,
+            132.15856062888145
+          ],
+          "median_generation": 139.50231526733168,
+          "ttft": [
+            0.16761420300099417,
+            0.18313370599935297,
+            0.1833496550007112,
+            0.18162882299839112,
+            0.18134736899992276,
+            0.18079886799932865,
+            0.183576493000146,
+            0.19313474699993094,
+            0.18749734300035925,
+            0.1848380929986888,
+            0.18373247100134904,
+            0.1836775329993543,
+            0.1823945409996668,
+            0.1838558559993544,
+            0.18764503100101138,
+            0.18454607000057877,
+            0.18710691900014353,
+            0.18500527499963937,
+            0.1838247110008524,
+            0.18654527500075346
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "c7045d848528f797e8cc7f568575e4d02140258551e7cbc85b140a40db1e6a31"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8320.0,
+            "accepted_fraction": 0.3368421052631579,
+            "mean_accepted_per_draft": 4.378947368421053
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.879405005142527,
+            12.234188045440767,
+            57.32478490361042,
+            57.200100245319305,
+            57.37167140174379
+          ],
+          "median_wall": 57.200100245319305,
+          "generation_estimates": [
+            92.93800065980246,
+            92.88826964878878,
+            92.98712210080203,
+            93.01819939661426,
+            93.13562750687464
+          ],
+          "median_generation": 92.98712210080203,
+          "ttft": [
+            37.60092664699914,
+            36.34819495099873,
+            3.435575016999792,
+            3.456953009001154,
+            3.4371504519986047
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "f3da20a8f4f2eb3b77df958ac741b747e835b2e3a1f7ca6fd780d9e55cd60632"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 510.0,
+            "draft_tokens": 6630.0,
+            "accepted_tokens": 2095.0,
+            "accepted_fraction": 0.31598793363499245,
+            "mean_accepted_per_draft": 4.107843137254902
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "ck-query5-split32",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1",
+        "MI210_FLASH_SPLITS": "32"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "query5-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            132.77873605471243,
+            132.73304566286234,
+            132.75483223349872,
+            127.36461697906384,
+            125.75964260103414
+          ],
+          "median_wall": 132.73304566286234,
+          "generation_estimates": [
+            139.22038980879495,
+            138.9316694360781,
+            139.20322291018556,
+            138.93255129038138,
+            139.29619126261278,
+            138.99748297700557,
+            139.3033807370061,
+            139.00460383658742,
+            139.32195371756015,
+            139.06774050357828,
+            139.37547894607107,
+            139.02380599087502,
+            136.02892582967112,
+            132.92203060440517,
+            132.35157891661214,
+            131.70937125404058,
+            131.59389009929234,
+            131.44554381536446,
+            131.6835451178636,
+            131.55574039515577
+          ],
+          "median_generation": 138.9650171336935,
+          "ttft": [
+            0.1737602090015571,
+            0.18198611100160633,
+            0.18509974900007364,
+            0.183854810999037,
+            0.18478192200018384,
+            0.18683193900142214,
+            0.18325593000008666,
+            0.1836656720006431,
+            0.18561249900085386,
+            0.1861807540008158,
+            0.18559423800070363,
+            0.18332497799929115,
+            0.18297806100054004,
+            0.18398123499900976,
+            0.18329534100121236,
+            0.1861158029987564,
+            0.18346268799905374,
+            0.19159209600002214,
+            0.18631044699941413,
+            0.1860542060003354
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "c7045d848528f797e8cc7f568575e4d02140258551e7cbc85b140a40db1e6a31"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8320.0,
+            "accepted_fraction": 0.3368421052631579,
+            "mean_accepted_per_draft": 4.378947368421053
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.057046234088329,
+            12.400293910390964,
+            61.224926489635266,
+            61.21026508951399,
+            61.27799845592007
+          ],
+          "median_wall": 61.21026508951399,
+          "generation_estimates": [
+            103.69639886851205,
+            103.7058909035492,
+            103.80817935229706,
+            103.79988458197141,
+            103.95082304714819
+          ],
+          "median_generation": 103.79988458197141,
+          "ttft": [
+            37.53635571999985,
+            36.361300701999426,
+            3.439363036000941,
+            3.4411661740014097,
+            3.439134012998693
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "4ce3a3e92351d43e3a71cbff1c4192c7649be2dea7aa5fcf5425dc4f601442c6"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 455.0,
+            "draft_tokens": 5915.0,
+            "accepted_tokens": 2135.0,
+            "accepted_fraction": 0.3609467455621302,
+            "mean_accepted_per_draft": 4.6923076923076925
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "q5-control-after",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "10",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "query5-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            181.8481431724857,
+            181.52506056841378,
+            178.48439551648337,
+            171.80391101592414,
+            171.1173772898338
+          ],
+          "median_wall": 178.48439551648337,
+          "generation_estimates": [
+            193.6605455387383,
+            193.17804014805995,
+            193.67086772743392,
+            193.23885136895154,
+            193.69856801251072,
+            193.22795747128677,
+            193.6883339791998,
+            193.29863128116375,
+            193.729656613664,
+            193.13013705445863,
+            189.32477439620928,
+            184.37148534756568,
+            183.42221005669845,
+            182.82171188880562,
+            182.40261778288126,
+            181.57692497382553,
+            181.9881131298487,
+            181.78593025813908,
+            181.93000186856625,
+            181.7607453579647
+          ],
+          "median_generation": 191.22745572533395,
+          "ttft": [
+            0.16317609600082505,
+            0.17692499500117265,
+            0.17628808399967966,
+            0.1768412380006339,
+            0.17724174999966635,
+            0.17684288099917467,
+            0.1820926229993347,
+            0.1796131239989336,
+            0.17838773899893567,
+            0.1786182079995342,
+            0.17907714499961003,
+            0.18235652099974686,
+            0.18312563099971157,
+            0.17884939500072505,
+            0.18026114199892618,
+            0.17984149800031446,
+            0.18736592999994173,
+            0.17968944899985217,
+            0.1801617940000142,
+            0.18015196699889202
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2fac34a40b3ffef55817d053f8ddd4d0d557d1185b04bcec3401e202fcdb4bab"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1380.0,
+            "draft_tokens": 17940.0,
+            "accepted_tokens": 8860.0,
+            "accepted_fraction": 0.4938684503901895,
+            "mean_accepted_per_draft": 6.420289855072464
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.246028135689954,
+            12.240322031301337,
+            57.505710939323265,
+            57.53897725775487,
+            57.60834875168267
+          ],
+          "median_wall": 57.505710939323265,
+          "generation_estimates": [
+            93.5059230136618,
+            93.35505496585564,
+            93.68569534643218,
+            93.51187419688645,
+            93.57178719802789
+          ],
+          "median_generation": 93.51187419688645,
+          "ttft": [
+            36.3440101970009,
+            36.35448354300024,
+            3.448517519998859,
+            3.4332744399998774,
+            3.426065635998384
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "9f46ef1ee54be747f9b9c630451255b421bf80435355dad5000f74372dd4c84d"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 485.0,
+            "draft_tokens": 6305.0,
+            "accepted_tokens": 2070.0,
+            "accepted_fraction": 0.3283108643933386,
+            "mean_accepted_per_draft": 4.268041237113402
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "ns13-control-before",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": null
+      },
+      "campaign": "query5-ns15-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            133.11640392955366,
+            132.95770723483525,
+            129.31923132240917,
+            125.7799314144097,
+            125.7123609942109
+          ],
+          "median_wall": 129.31923132240917,
+          "generation_estimates": [
+            139.54410432635387,
+            138.8518077723931,
+            139.55442745049226,
+            138.8686398543247,
+            139.53363013449817,
+            138.89620030608157,
+            139.53444889274724,
+            138.88693902828982,
+            139.56811099261174,
+            137.0014601886073,
+            133.00504128461537,
+            131.82345605096052,
+            131.92470733102255,
+            131.30407029660086,
+            131.6942440242834,
+            131.1110998792777,
+            131.55587214457785,
+            131.0742520966697,
+            131.65391328173874,
+            131.19885904414235
+          ],
+          "median_generation": 135.00325073661134,
+          "ttft": [
+            0.1650216729976819,
+            0.1788126729989017,
+            0.17899241099803476,
+            0.17664068900194252,
+            0.18021329299881472,
+            0.17848815800243756,
+            0.18042429300112417,
+            0.17964543999914895,
+            0.18056636799883563,
+            0.17970015500031877,
+            0.1824390570000105,
+            0.1826955979995546,
+            0.1854045829968527,
+            0.18124516699754167,
+            0.18480714600082138,
+            0.18622894600048312,
+            0.17936223300057463,
+            0.18251344800228253,
+            0.18240140300258645,
+            0.18570698899929994
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "c7045d848528f797e8cc7f568575e4d02140258551e7cbc85b140a40db1e6a31"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8320.0,
+            "accepted_fraction": 0.3368421052631579,
+            "mean_accepted_per_draft": 4.378947368421053
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.417587639202393,
+            12.386459284488414,
+            60.951808469801044,
+            61.17439064488963,
+            61.156711904623414
+          ],
+          "median_wall": 60.951808469801044,
+          "generation_estimates": [
+            103.4544938897182,
+            102.3955489780692,
+            102.92924982371281,
+            103.50362247374932,
+            103.50856310069389
+          ],
+          "median_generation": 103.4544938897182,
+          "ttft": [
+            36.29173037500004,
+            36.34451098900172,
+            3.435099927999545,
+            3.431914010998298,
+            3.4345354629986105
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "4ce3a3e92351d43e3a71cbff1c4192c7649be2dea7aa5fcf5425dc4f601442c6"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 455.0,
+            "draft_tokens": 5915.0,
+            "accepted_tokens": 2135.0,
+            "accepted_fraction": 0.3609467455621302,
+            "mean_accepted_per_draft": 4.6923076923076925
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "query5-ns15",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "15",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "query5-ns15-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            179.11840529501356,
+            179.56744364125058,
+            179.5794589728364,
+            179.5234666950556,
+            177.9705728667923
+          ],
+          "median_wall": 179.5234666950556,
+          "generation_estimates": [
+            188.68639213804528,
+            189.36516712930447,
+            188.6812140940674,
+            189.37307500220717,
+            188.67556359113004,
+            189.3322587659624,
+            188.6692212161945,
+            189.35908803784892,
+            188.68811696185622,
+            189.3432524870979,
+            188.61983779946323,
+            189.33650820395783,
+            188.65627572139957,
+            189.38166855571848,
+            188.66062512087976,
+            189.40259240691566,
+            188.69313909818987,
+            189.42534789536393,
+            187.14909807343847,
+            184.05654238298706
+          ],
+          "median_generation": 188.69062803002305,
+          "ttft": [
+            0.17758380899977055,
+            0.14710405599907972,
+            0.1494934980000835,
+            0.14426306599852978,
+            0.14776656899994123,
+            0.14506807399811805,
+            0.14740684899879852,
+            0.14877100399826304,
+            0.14748091400178964,
+            0.1462832110009913,
+            0.14664346599965938,
+            0.14700960899790516,
+            0.1474060999971698,
+            0.14815491599802044,
+            0.14680635600234382,
+            0.15023834599924157,
+            0.14675717799764243,
+            0.14845541799877537,
+            0.14883555299820728,
+            0.14895119900029385
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2fac34a40b3ffef55817d053f8ddd4d0d557d1185b04bcec3401e202fcdb4bab"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1380.0,
+            "draft_tokens": 20700.0,
+            "accepted_tokens": 9080.0,
+            "accepted_fraction": 0.4386473429951691,
+            "mean_accepted_per_draft": 6.579710144927536
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.45774917123206,
+            11.74919342847879,
+            48.48023955204354,
+            48.49128513814654,
+            48.45770507573111
+          ],
+          "median_wall": 48.45770507573111,
+          "generation_estimates": [
+            72.89729234928457,
+            71.90541450666935,
+            71.75772815986382,
+            71.98016598496572,
+            71.77917744285122
+          ],
+          "median_generation": 71.90541450666935,
+          "ttft": [
+            37.67551877600272,
+            36.47042316999796,
+            3.4393528330001573,
+            3.4587958669981163,
+            3.446078713001043
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2d1a9ff376f90ed26e4d3ecc51084b8e5fe23b8d5678dc7a7b7e1fcbdd4fa0cb"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 595.0,
+            "draft_tokens": 8925.0,
+            "accepted_tokens": 1980.0,
+            "accepted_fraction": 0.2218487394957983,
+            "mean_accepted_per_draft": 3.327731092436975
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "ns13-control-after",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "query5-ns15-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            132.15960858572942,
+            132.02208985949508,
+            126.43965317366848,
+            124.48221487481611,
+            124.33374878145538
+          ],
+          "median_wall": 126.43965317366848,
+          "generation_estimates": [
+            138.4191903490752,
+            137.92022121718892,
+            138.43977602466236,
+            137.9816877568885,
+            138.46960925743852,
+            137.9216106181283,
+            138.48064233212094,
+            137.9550357731897,
+            135.43710109545515,
+            131.62611263524218,
+            131.15278083392326,
+            130.2894970820314,
+            130.20011570506713,
+            129.86916869900588,
+            130.222820442871,
+            129.78529688698228,
+            130.05535474797875,
+            129.80306255728186,
+            130.052349218849,
+            129.85154150001233
+          ],
+          "median_generation": 131.38944673458272,
+          "ttft": [
+            0.16342896900096093,
+            0.18049373199755792,
+            0.17915517000074033,
+            0.17996096800197847,
+            0.17968077499972424,
+            0.17891951999990852,
+            0.18160291299864184,
+            0.18104193600083818,
+            0.1772690979996696,
+            0.17936453500078642,
+            0.1847419749974506,
+            0.18075895800211583,
+            0.18045440299829352,
+            0.18288636000215774,
+            0.18240341599812382,
+            0.1836159270023927,
+            0.18510634400081472,
+            0.1835185599993565,
+            0.18574449600055232,
+            0.18527098699996714
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "c7045d848528f797e8cc7f568575e4d02140258551e7cbc85b140a40db1e6a31"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8320.0,
+            "accepted_fraction": 0.3368421052631579,
+            "mean_accepted_per_draft": 4.378947368421053
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.415938877047115,
+            12.366433227299447,
+            61.000342573393816,
+            61.00416562382124,
+            61.14563142205371
+          ],
+          "median_wall": 61.000342573393816,
+          "generation_estimates": [
+            103.04053581889536,
+            102.2483908096374,
+            102.95785112093209,
+            103.02759352127308,
+            103.38015547620951
+          ],
+          "median_generation": 103.02759352127308,
+          "ttft": [
+            36.27747138199993,
+            36.404276178000146,
+            3.429655151998304,
+            3.4324240179994376,
+            3.4300621500005946
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "4ce3a3e92351d43e3a71cbff1c4192c7649be2dea7aa5fcf5425dc4f601442c6"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 455.0,
+            "draft_tokens": 5915.0,
+            "accepted_tokens": 2135.0,
+            "accepted_fraction": 0.3609467455621302,
+            "mean_accepted_per_draft": 4.6923076923076925
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {},
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "register-control-before",
+      "image_id": "sha256:a8267a2c322ef0db95c7622cdd783c44332d2b12e52391211796b2d97f0e4dc5",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1",
+        "MI210_REGISTER_QUANT": "0"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": null
+      },
+      "campaign": "register-quant-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            135.1093978343195,
+            135.2429702364888,
+            135.2840473059789,
+            130.8945196474725,
+            127.72567282753333
+          ],
+          "median_wall": 135.1093978343195,
+          "generation_estimates": [
+            140.84142425189228,
+            140.31876502181268,
+            140.85127473458724,
+            140.29474315020087,
+            140.83737698525562,
+            140.36016927039654,
+            140.87504126632538,
+            140.31041707754136,
+            140.86224384434522,
+            140.35358509634858,
+            140.87135932988636,
+            140.3419685062634,
+            140.29158876445638,
+            136.57522057353052,
+            133.97139509521458,
+            132.8035860830623,
+            132.9561382434584,
+            132.26590746108752,
+            132.3319584988081,
+            132.13612084564429
+          ],
+          "median_generation": 140.314591049677,
+          "ttft": [
+            0.16859763499815017,
+            0.14945548300238443,
+            0.15039475500088884,
+            0.14758184899983462,
+            0.15148764900004608,
+            0.15099944900066475,
+            0.15008416699856753,
+            0.1504700559999037,
+            0.14918975299951853,
+            0.1500512519996846,
+            0.15038558099695365,
+            0.1500573319972318,
+            0.14860069900169037,
+            0.15001863899669843,
+            0.14870436099954532,
+            0.15116386999943643,
+            0.14962817699779407,
+            0.14926491599908331,
+            0.14953281199996127,
+            0.14870750000045518
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "9458fa334c77669075f588e2a6d7877ff9677f4b15582d32271f0f5357790a0a"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8340.0,
+            "accepted_fraction": 0.33765182186234816,
+            "mean_accepted_per_draft": 4.389473684210526
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.66674114988391,
+            12.004564843165863,
+            53.29098371022143,
+            53.212458185938246,
+            53.33917762923901
+          ],
+          "median_wall": 53.212458185938246,
+          "generation_estimates": [
+            82.85507591832128,
+            82.7422175070731,
+            82.88100185864413,
+            82.87222773081592,
+            83.02963225112373
+          ],
+          "median_generation": 82.87222773081592,
+          "ttft": [
+            37.71747817800133,
+            36.47407595999903,
+            3.441659365002124,
+            3.4550025809985527,
+            3.444027452998853
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "5457de0e7af66a9511cb16e1a823aaea729bb1b7c9f461988c3aa5a92277f0fa"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 570.0,
+            "draft_tokens": 7410.0,
+            "accepted_tokens": 1990.0,
+            "accepted_fraction": 0.26855600539811064,
+            "mean_accepted_per_draft": 3.491228070175439
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long120k": {
+          "wall_tokens_per_second": [
+            3.411610490050594,
+            3.407364104999494,
+            41.450620990412176
+          ],
+          "median_wall": 3.411610490050594,
+          "generation_estimates": [
+            73.8085550060334,
+            73.71197232579897,
+            73.81899931422915
+          ],
+          "median_generation": 73.8085550060334,
+          "ttft": [
+            143.15187106899975,
+            143.3298166889981,
+            5.429174755001441
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 120081,
+              "total_tokens": 120593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "0da131aade4539303817a3d9b403cf8b72c94387200e245c62e5bfe1b1478775"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 309.0,
+            "draft_tokens": 4017.0,
+            "accepted_tokens": 1239.0,
+            "accepted_fraction": 0.3084391336818521,
+            "mean_accepted_per_draft": 4.009708737864078
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {
+        "parallel": {
+          "passed": 16,
+          "total": 16
+        },
+        "retrieval120k": {
+          "passed": 3,
+          "total": 3
+        }
+      },
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "register-quant",
+      "image_id": "sha256:a8267a2c322ef0db95c7622cdd783c44332d2b12e52391211796b2d97f0e4dc5",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1",
+        "MI210_REGISTER_QUANT": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "register-quant-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            125.76087943377215,
+            125.67686719438836,
+            125.6497022315102,
+            119.97884414446096,
+            118.50457067457081
+          ],
+          "median_wall": 125.6497022315102,
+          "generation_estimates": [
+            131.56493588571917,
+            131.09704107937407,
+            131.54925292587924,
+            131.09144593986997,
+            131.58135629379183,
+            131.08509655344614,
+            131.58025229515926,
+            131.05184490931248,
+            131.5893047233968,
+            131.07242672338046,
+            131.60968980053832,
+            130.85141307374693,
+            127.48993557515686,
+            124.79751938286945,
+            124.40533807139333,
+            123.92610578014313,
+            123.89812625872564,
+            123.35262398665802,
+            123.76571773924984,
+            123.34821386471903
+          ],
+          "median_generation": 131.06213581634648,
+          "ttft": [
+            0.1674216350002098,
+            0.1810644469987892,
+            0.18563451299996814,
+            0.18418603700047242,
+            0.18178049400012242,
+            0.18599998599893297,
+            0.18115001000114717,
+            0.18004510000173468,
+            0.18283892399995239,
+            0.18078799800059642,
+            0.1826261339992925,
+            0.18144332800147822,
+            0.18298609900011797,
+            0.18480926299889688,
+            0.18234755499724997,
+            0.1840298890019767,
+            0.1853196809970541,
+            0.18626795499949367,
+            0.18575371299812105,
+            0.18440026900134399
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "f091c161bde4375769f20ecb2443b3532d7def38d90b9e8364055557df73b3af"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 2020.0,
+            "draft_tokens": 26260.0,
+            "accepted_tokens": 8260.0,
+            "accepted_fraction": 0.31454683929931454,
+            "mean_accepted_per_draft": 4.089108910891089
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.755266477921316,
+            12.100822382174862,
+            56.597581176308424,
+            56.53377126971762,
+            56.594027703733914
+          ],
+          "median_wall": 56.53377126971762,
+          "generation_estimates": [
+            91.37910019695327,
+            91.28212242342748,
+            91.32586839434882,
+            91.27772963636774,
+            91.31484986591083
+          ],
+          "median_generation": 91.31484986591083,
+          "ttft": [
+            37.96225953999965,
+            36.712733529002435,
+            3.450555210998573,
+            3.4577237230005267,
+            3.4503825139981927
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "afa5ccf22c2024230e35a309a5dc10bfe8c15bfc2907342bad2767811ae598f2"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 515.0,
+            "draft_tokens": 6695.0,
+            "accepted_tokens": 2040.0,
+            "accepted_fraction": 0.30470500373412995,
+            "mean_accepted_per_draft": 3.9611650485436893
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long120k": {
+          "wall_tokens_per_second": [
+            3.41346054422377,
+            3.412037048140793,
+            43.704424698354046
+          ],
+          "median_wall": 3.41346054422377,
+          "generation_estimates": [
+            81.47480287548065,
+            81.29302204206043,
+            81.61057498065537
+          ],
+          "median_generation": 81.47480287548065,
+          "ttft": [
+            143.72197033499833,
+            143.77057043199966,
+            5.452985510000872
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 120081,
+              "total_tokens": 120593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "e21bf06aba915b33ed768dca028367d0fc84c7d9371dee37ac92b223a77186d6"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 279.0,
+            "draft_tokens": 3627.0,
+            "accepted_tokens": 1263.0,
+            "accepted_fraction": 0.348221670802316,
+            "mean_accepted_per_draft": 4.526881720430108
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {
+        "parallel": {
+          "passed": 16,
+          "total": 16
+        },
+        "retrieval120k": {
+          "passed": 3,
+          "total": 3
+        }
+      },
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "register-control-after",
+      "image_id": "sha256:a8267a2c322ef0db95c7622cdd783c44332d2b12e52391211796b2d97f0e4dc5",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1",
+        "MI210_REGISTER_QUANT": "0"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "campaign": "register-quant-screen-20261007",
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            181.52747676458637,
+            181.42672228885405,
+            181.4454329754551,
+            181.2977033932902,
+            175.87990187928526
+          ],
+          "median_wall": 181.42672228885405,
+          "generation_estimates": [
+            193.89740857690254,
+            193.04809313496793,
+            193.86678045447,
+            193.0317221741201,
+            193.91384436725932,
+            193.05924509566717,
+            193.9276245945497,
+            193.10027971645874,
+            193.95847175115944,
+            193.08664840571535,
+            193.93409550776815,
+            193.11232731971566,
+            193.9327935034372,
+            193.16124073203594,
+            194.00771675926404,
+            193.0937113180866,
+            193.05747291087056,
+            188.25169560574076,
+            185.17299728013288,
+            183.1668230713576
+          ],
+          "median_generation": 193.1063035180872,
+          "ttft": [
+            0.17067931900237454,
+            0.18159114900117856,
+            0.1817420059996948,
+            0.18063041200002772,
+            0.1809493709988601,
+            0.18274267599917948,
+            0.17968478799957666,
+            0.1798078620013257,
+            0.18143302499811398,
+            0.18107172199961497,
+            0.17922044100123458,
+            0.1815611109996098,
+            0.18716671199945267,
+            0.18266206399857765,
+            0.18305772700114176,
+            0.18087808199925348,
+            0.18128683399845613,
+            0.18265150699880905,
+            0.1831724520015996,
+            0.18456208399948082
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2fac34a40b3ffef55817d053f8ddd4d0d557d1185b04bcec3401e202fcdb4bab"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1380.0,
+            "draft_tokens": 17940.0,
+            "accepted_tokens": 8860.0,
+            "accepted_fraction": 0.4938684503901895,
+            "mean_accepted_per_draft": 6.420289855072464
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.66567821947309,
+            11.999060207449647,
+            52.07020342558023,
+            52.05634419678615,
+            52.020782142341474
+          ],
+          "median_wall": 52.020782142341474,
+          "generation_estimates": [
+            79.89111975428287,
+            79.78430460952752,
+            79.82591877315103,
+            79.83813810245056,
+            79.78591984385001
+          ],
+          "median_generation": 79.82591877315103,
+          "ttft": [
+            37.49263787300151,
+            36.26473903100123,
+            3.4309411530011857,
+            3.434544799001742,
+            3.4370956669990846
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "2d1a9ff376f90ed26e4d3ecc51084b8e5fe23b8d5678dc7a7b7e1fcbdd4fa0cb"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 590.0,
+            "draft_tokens": 7670.0,
+            "accepted_tokens": 1985.0,
+            "accepted_fraction": 0.2588005215123859,
+            "mean_accepted_per_draft": 3.364406779661017
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        },
+        "long120k": {
+          "wall_tokens_per_second": [
+            3.4265297591291835,
+            3.420686969512928,
+            42.2971985646428
+          ],
+          "median_wall": 3.4265297591291835,
+          "generation_estimates": [
+            76.48178701690044,
+            76.54668591018466,
+            76.60936701992783
+          ],
+          "median_generation": 76.54668591018466,
+          "ttft": [
+            142.74041351599953,
+            143.00139094399856,
+            5.433926644000167
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 120081,
+              "total_tokens": 120593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "edcbd88793fdb0d7ccfcc2dc92c24856b7a4b44e776a18ed068c2a0cffc5eb84"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 297.0,
+            "draft_tokens": 3861.0,
+            "accepted_tokens": 1239.0,
+            "accepted_fraction": 0.3209013209013209,
+            "mean_accepted_per_draft": 4.171717171717172
+          },
+          "output_hash_note": "Distinct hashes across recorded timing samples"
+        }
+      },
+      "regressions": {
+        "parallel": {
+          "passed": 16,
+          "total": 16
+        },
+        "retrieval120k": {
+          "passed": 3,
+          "total": 3
+        }
+      },
+      "prompt_sha256": "217174f1d33022515220cc5f51046fc7fd4af1eae9c7976742a9b265af15e565"
+    },
+    {
+      "label": "geometry-control-before",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_KV_TILE": "64",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": null
+      },
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            132.26245265567863,
+            132.17076006781247,
+            132.12678005906625,
+            127.20157316774387,
+            124.97140991436454
+          ],
+          "median_wall": 132.12678005906625,
+          "generation_estimates": [
+            138.40228459544272,
+            138.20493560664593,
+            138.387332190754,
+            138.20233606701714,
+            138.3987535326293,
+            138.21343705707466,
+            138.35969108689986,
+            138.1842595488246,
+            138.4247824079997,
+            138.35391590149288,
+            138.44750434465743,
+            138.2100567392599,
+            137.00221162998983,
+            132.7398631894573,
+            131.3982796737444,
+            131.0662766795946,
+            130.90639758248912,
+            130.42936855258137,
+            130.49900179702277,
+            130.42922656553816
+          ],
+          "median_generation": 138.20363583683155,
+          "ttft": [
+            0.16107019999981276,
+            0.18159630900117918,
+            0.17847987299683155,
+            0.1814101620002475,
+            0.17643572599990875,
+            0.17715439799940214,
+            0.18172137700094027,
+            0.17726975599725847,
+            0.180446929000027,
+            0.18795588899956783,
+            0.17848421600137954,
+            0.17794916499769897,
+            0.18310018299962394,
+            0.18213417199876858,
+            0.1849890100020275,
+            0.18086012300045695,
+            0.18284588799724588,
+            0.18332319900218863,
+            0.1819474830008403,
+            0.18296786000064458
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "c7045d848528f797e8cc7f568575e4d02140258551e7cbc85b140a40db1e6a31"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8320.0,
+            "accepted_fraction": 0.3368421052631579,
+            "mean_accepted_per_draft": 4.378947368421053
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.440590771237416,
+            12.416649560905329,
+            61.017544733688275,
+            61.02922201030666,
+            61.055892903584976
+          ],
+          "median_wall": 61.017544733688275,
+          "generation_estimates": [
+            103.05496251893888,
+            102.84542849540752,
+            103.05516380674639,
+            103.0896127410021,
+            103.20590020755046
+          ],
+          "median_generation": 103.05516380674639,
+          "ttft": [
+            36.19652353299898,
+            36.265819565996935,
+            3.4320248190015263,
+            3.43205637400024,
+            3.4339672829992196
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "4ce3a3e92351d43e3a71cbff1c4192c7649be2dea7aa5fcf5425dc4f601442c6"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 455.0,
+            "draft_tokens": 5915.0,
+            "accepted_tokens": 2135.0,
+            "accepted_fraction": 0.3609467455621302,
+            "mean_accepted_per_draft": 4.6923076923076925
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        }
+      },
+      "regressions": {},
+      "campaign": "attention-geometry-20261007"
+    },
+    {
+      "label": "kv32-split32",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_KV_TILE": "32",
+        "MI210_FLASH_SPLITS": "32",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            150.0389937937755,
+            149.80797272819945,
+            146.45893623876145,
+            141.8305433090014,
+            141.78998420893538
+          ],
+          "median_wall": 146.45893623876145,
+          "generation_estimates": [
+            157.99067584604722,
+            157.67994753683604,
+            157.97924924823644,
+            157.75685494612142,
+            157.959774196359,
+            157.6813016797954,
+            157.9481742607675,
+            157.64969015167154,
+            158.0310689545139,
+            156.7042901645718,
+            152.34416090973573,
+            149.71704101845165,
+            149.64620437895852,
+            149.09275602048095,
+            148.9345110536985,
+            148.53130668537855,
+            149.18946152379556,
+            148.93443370059063,
+            149.0971257095321,
+            148.67292769970206
+          ],
+          "median_generation": 154.52422553715377,
+          "ttft": [
+            0.16262769999957527,
+            0.17723286199907307,
+            0.17915998900207342,
+            0.18005318799987435,
+            0.18109044100128813,
+            0.17867284399835626,
+            0.17960157899869955,
+            0.17692587100100354,
+            0.17688615299994126,
+            0.17892058700090274,
+            0.1823732379998546,
+            0.18140660100107198,
+            0.1814190379991487,
+            0.18024881599922082,
+            0.18075731199860456,
+            0.18179223900006036,
+            0.1780345170009241,
+            0.1806278520016349,
+            0.18162311500054784,
+            0.18096763799985638
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "1f55f8b2df9d2c7c8f88c8fdb8f45ba2064cea7f578a9914dcb5d3182a7dfabb"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1700.0,
+            "draft_tokens": 22100.0,
+            "accepted_tokens": 8620.0,
+            "accepted_fraction": 0.3900452488687783,
+            "mean_accepted_per_draft": 5.070588235294117
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            12.078535577620809,
+            11.995837462394055,
+            53.401373185502166,
+            53.71319619005625,
+            53.79328854355613
+          ],
+          "median_wall": 53.401373185502166,
+          "generation_estimates": [
+            85.0276340567803,
+            82.06941752704893,
+            83.08458758975524,
+            83.84741695616279,
+            84.07047789853053
+          ],
+          "median_generation": 83.84741695616279,
+          "ttft": [
+            36.37883005700132,
+            36.45448589999796,
+            3.4367476840016025,
+            3.4372057629989285,
+            3.439018386998214
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "ca2a4fb70fba80520a4adf92b2d024b52cba740e0d1d3dd1ef90af4fed2000d3"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 580.0,
+            "draft_tokens": 7540.0,
+            "accepted_tokens": 1975.0,
+            "accepted_fraction": 0.2619363395225464,
+            "mean_accepted_per_draft": 3.4051724137931036
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        }
+      },
+      "regressions": {},
+      "campaign": "attention-geometry-20261007"
+    },
+    {
+      "label": "kv64-split16",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_KV_TILE": "64",
+        "MI210_FLASH_SPLITS": "16",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            133.05834202169234,
+            132.8695819014346,
+            130.5036382304728,
+            125.86219824765965,
+            125.55900384353937
+          ],
+          "median_wall": 130.5036382304728,
+          "generation_estimates": [
+            139.70743422190043,
+            138.67108904303683,
+            139.68085450475692,
+            138.71054348164705,
+            139.68473633384087,
+            138.69319201099526,
+            139.74243631280362,
+            138.7088777763063,
+            139.70866452668506,
+            138.61798194801625,
+            135.66270095265327,
+            132.29901353541084,
+            132.26789889362965,
+            131.40117588284988,
+            131.68353303723023,
+            130.8202101920487,
+            131.59008576642196,
+            130.8224014813177,
+            131.37939439575695,
+            131.05427282217377
+          ],
+          "median_generation": 137.14034145033474,
+          "ttft": [
+            0.16814946299928124,
+            0.17909632599912584,
+            0.1782188649995078,
+            0.17931048600075883,
+            0.182496165001794,
+            0.1817400890031422,
+            0.18066552299933392,
+            0.18357288100014557,
+            0.17887600299945916,
+            0.17936867699972936,
+            0.17749577599897748,
+            0.18220209699939005,
+            0.1817338459986786,
+            0.18282889900001464,
+            0.1824852740028291,
+            0.18399751100150752,
+            0.1830292160011595,
+            0.1829179890009982,
+            0.18170891300178482,
+            0.1835547909977322
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "c7045d848528f797e8cc7f568575e4d02140258551e7cbc85b140a40db1e6a31"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1900.0,
+            "draft_tokens": 24700.0,
+            "accepted_tokens": 8320.0,
+            "accepted_fraction": 0.3368421052631579,
+            "mean_accepted_per_draft": 4.378947368421053
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.879386727065075,
+            11.864165352418315,
+            49.9677990082758,
+            49.95816353608665,
+            49.95730581319362
+          ],
+          "median_wall": 49.95730581319362,
+          "generation_estimates": [
+            74.97891286670105,
+            74.9723745359819,
+            74.96794051405134,
+            74.99456934381989,
+            74.96626543730004
+          ],
+          "median_generation": 74.9723745359819,
+          "ttft": [
+            36.28403029299807,
+            36.33878197500235,
+            3.4299068250002165,
+            3.4340660339985334,
+            3.431919825998193
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "501cddc86e5d2768ec5d51294dc1c4331f96fbd13705bfd3d44aa95b988d9108"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 635.0,
+            "draft_tokens": 8255.0,
+            "accepted_tokens": 1925.0,
+            "accepted_fraction": 0.23319200484554814,
+            "mean_accepted_per_draft": 3.031496062992126
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        }
+      },
+      "regressions": {},
+      "campaign": "attention-geometry-20261007"
+    },
+    {
+      "label": "kv32-split64",
+      "image_id": "sha256:eb769d7cd65e61b7533013eafe3650e6d3bf06b501da530cadbb752bc1bb0a50",
+      "settings": {
+        "SPEC_TOKENS": "13",
+        "MI210_QUERY_TILE": "5",
+        "MI210_INT8_LM_HEAD": "1",
+        "MI210_KV_TILE": "32",
+        "MI210_FLASH_SPLITS": "64",
+        "MI210_NATIVE_GDN": "1",
+        "MI210_INT8_QK": "1",
+        "MI210_TUNED_CK": "1"
+      },
+      "quality": {
+        "scope": "52 constrained greedy probes; not full model fidelity",
+        "passed": 52,
+        "total": 52,
+        "exact_baseline_agreement": 52
+      },
+      "measurements": {
+        "short": {
+          "wall_tokens_per_second": [
+            149.16071123171702,
+            149.0048582418211,
+            145.8436771014865,
+            140.63335100755168,
+            140.1935807735629
+          ],
+          "median_wall": 145.8436771014865,
+          "generation_estimates": [
+            157.4551770135942,
+            156.43976304929078,
+            157.4534648225492,
+            156.38660233904395,
+            157.43803140951468,
+            156.41509449643237,
+            157.41868985017,
+            156.44468192641128,
+            157.48394225755732,
+            155.96001670822352,
+            152.0842052374672,
+            148.53333339649797,
+            148.65939683239344,
+            147.62237952536705,
+            147.9397381252709,
+            147.18656921296497,
+            147.71935683167743,
+            147.01106130765044,
+            147.82474035897738,
+            147.12449720702764
+          ],
+          "median_generation": 154.02211097284535,
+          "ttft": [
+            0.16318867999871145,
+            0.17964137799935997,
+            0.18028072499873815,
+            0.18030902000100468,
+            0.18162816000040038,
+            0.17892720799864037,
+            0.17794679799771984,
+            0.17887380699903588,
+            0.17862285999945016,
+            0.17788919799932046,
+            0.1820070419998956,
+            0.18034638300014194,
+            0.18060383000192815,
+            0.18519049099995755,
+            0.18379629199989722,
+            0.18618991399853257,
+            0.1819183290026558,
+            0.1844411910024064,
+            0.18872928699784097,
+            0.18605710200063186
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 62,
+              "total_tokens": 574,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "1f55f8b2df9d2c7c8f88c8fdb8f45ba2064cea7f578a9914dcb5d3182a7dfabb"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 1700.0,
+            "draft_tokens": 22100.0,
+            "accepted_tokens": 8620.0,
+            "accepted_fraction": 0.3900452488687783,
+            "mean_accepted_per_draft": 5.070588235294117
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        },
+        "long": {
+          "wall_tokens_per_second": [
+            11.87928440669903,
+            11.827575969287102,
+            50.223763202500464,
+            50.21284133864925,
+            50.31835331254727
+          ],
+          "median_wall": 50.21284133864925,
+          "generation_estimates": [
+            76.50535368415969,
+            74.92877120342544,
+            75.74677431832124,
+            75.92518124807593,
+            75.94020315334492
+          ],
+          "median_generation": 75.92518124807593,
+          "ttft": [
+            36.420404566997604,
+            36.468311120999715,
+            3.4476541690019076,
+            3.4655979730014224,
+            3.44574570199984
+          ],
+          "usage": [
+            {
+              "prompt_tokens": 48081,
+              "total_tokens": 48593,
+              "completion_tokens": 512
+            }
+          ],
+          "output_sha256": [
+            "ded2b43604fc8167499993e891102d10f7cb91a785dd1c12e56d1ce74ae960a5"
+          ],
+          "timing_schema": "first_last_content_v2",
+          "acceptance": {
+            "drafts": 635.0,
+            "draft_tokens": 8255.0,
+            "accepted_tokens": 1955.0,
+            "accepted_fraction": 0.23682616596002423,
+            "mean_accepted_per_draft": 3.078740157480315
+          },
+          "output_hash_note": "Distinct hashes across timing samples"
+        }
+      },
+      "regressions": {},
+      "campaign": "attention-geometry-20261007"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "source": "csrc/libtorch_stable/gdn/fused_gdn_decode_kernel_rocm.cu",
+  "source_sha256": "a6f46612845f08ddd7cbe5f5aa2f370cbc9f0e0129fdaed1a35eb25c6d48b7ec",
+  "generated_sha256": "4285dd4735e655fcaf607df433b735d2b84ff91dc0465154f2da8caf33959803",
+  "arch": "gfx90a",
+  "threads": 256,
+  "max_verify_tokens": 16,
+  "variant": "value_partitioned_with_inplace_norm",
+  "token_staging": "each logical warp iterates over tokens in strides of kWarps",
+  "precision": "BF16 inputs/output, FP32 recurrent state remains supported",
+  "numeric_validation": "NOT_RUN",
+  "changes": {
+    "#include \"../torch_utils.h\"": "#include \"mi210_torch_utils.h\"",
+    "constexpr int kMaxMtpTokens = 8;": "constexpr int kMaxMtpTokens = 16;",
+    "cudaStream_t stream": "hipStream_t stream",
+    "__shfl_xor_sync(GDN_WARP_MASK, value, offset)": "__shfl_xor(value, offset, 32)",
+    "__shfl_xor_sync(GDN_WARP_MASK, x, offset)": "__shfl_xor(x, offset, 32)",
+    "__shfl_xor_sync(GDN_WARP_MASK, y, offset)": "__shfl_xor(y, offset, 32)",
+    "=\n            dot_hq_01.x;": "=\n            __bfloat162float(__float2bfloat16(dot_hq_01.x));",
+    "=\n            dot_hq_01.y;": "=\n            __bfloat162float(__float2bfloat16(dot_hq_01.y));",
+    "=\n            dot_hq_23.x;": "=\n            __bfloat162float(__float2bfloat16(dot_hq_23.x));",
+    "=\n            dot_hq_23.y;": "=\n            __bfloat162float(__float2bfloat16(dot_hq_23.y));"
+  }
+}

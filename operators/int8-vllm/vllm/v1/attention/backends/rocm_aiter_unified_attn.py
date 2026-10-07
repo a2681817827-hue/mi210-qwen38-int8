@@ -1,0 +1,1586 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+"""Attention layer with PagedAttention and Triton prefix prefill."""
+
+from typing import ClassVar
+
+import os as _os
+os = _os
+
+from dataclasses import replace
+
+import torch
+
+from vllm import _custom_ops as ops
+from vllm._aiter_ops import rocm_aiter_ops
+from vllm.config.cache import CacheDType
+from vllm.logger import init_logger
+from vllm.model_executor.layers.quantization.utils.quant_utils import (
+    QuantKey,
+    kFp8StaticTensorSym,
+)
+from vllm.utils.torch_utils import get_dtype_size, is_quantized_kv_cache
+from vllm.v1.attention.backend import AttentionLayer, AttentionType, MultipleOf
+from vllm.v1.attention.backends.rocm_attn import (
+    RocmAttentionBackend,
+    RocmAttentionImpl,
+    RocmAttentionMetadata,
+    RocmAttentionMetadataBuilder,
+)
+from vllm.v1.attention.backends.utils import get_kv_cache_layout
+from vllm.v1.attention.ops.triton_reshape_and_cache_flash import (
+    triton_reshape_and_cache_flash_per_token_head_quant,
+)
+from vllm.v1.kv_cache_interface import (
+    KVQuantMode,
+    get_kv_quant_mode,
+    kv_cache_uses_per_token_head_scales,
+)
+
+logger = init_logger(__name__)
+
+
+class RocmAiterUnifiedAttentionBackend(RocmAttentionBackend):
+    supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
+    supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [
+        "auto",
+        "float16",
+        "bfloat16",
+        "fp8",
+        "fp8_e4m3",
+        "fp8_e5m2",
+        "int8_per_token_head",
+        "int8_block_g4",
+        "int8_block_g8",
+        "int8_block_g16",
+        "int8_block_g32",
+        "int8_block_g64",
+        "int8_block_g128",
+    ]
+
+    @staticmethod
+    def get_kv_cache_stride_order(
+        include_num_layers_dimension: bool = False,
+    ) -> tuple[int, ...]:
+        # Mirrors TritonAttentionBackend: the UA kernels read the cache
+        # through the tensor's own strides (see _ensure_scale_caches /
+        # get_kv_cache_shape — logical (B, H, N, 2*hs) with num_blocks as the
+        # outermost physical dim), so declaring the layout here enables
+        # indexes_kv_by_block_stride and with it page-size padding for mixed
+        # spec-decode KV specs (int8-PTH target + fp16 draft).
+        cache_layout = get_kv_cache_layout()
+        if cache_layout == "NHD" and include_num_layers_dimension:
+            return (1, 0, 3, 2, 4)
+        elif cache_layout == "NHD":
+            return (0, 2, 1, 3)
+        elif cache_layout == "HND" and include_num_layers_dimension:
+            return (1, 2, 0, 3, 4)
+        return (0, 1, 2, 3)
+
+    @staticmethod
+    def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
+        return [MultipleOf(16)]
+
+    @classmethod
+    def get_preferred_block_size(cls, default_block_size: int) -> int:
+        return 64
+
+    @classmethod
+    def supports_block_size(cls, block_size: int | None) -> bool:
+        if block_size is None:
+            return True
+        return block_size % 16 == 0
+
+    @classmethod
+    def supports_head_size(cls, head_size: int) -> bool:
+        return head_size >= 32
+
+    @classmethod
+    def supports_mm_prefix(cls) -> bool:
+        return True
+
+    @classmethod
+    def supports_sink(cls) -> bool:
+        return True
+
+    @classmethod
+    def supports_non_causal(cls) -> bool:
+        return False
+
+    forward_includes_kv_cache_update: bool = False
+
+    @staticmethod
+    def get_name() -> str:
+        return "ROCM_AITER_UNIFIED_ATTN"
+
+    @staticmethod
+    def get_impl_cls() -> type["RocmAiterUnifiedAttentionImpl"]:
+        return RocmAiterUnifiedAttentionImpl
+
+    @staticmethod
+    def get_kv_cache_shape(
+        num_blocks: int,
+        block_size: int,
+        num_kv_heads: int,
+        head_size: int,
+        cache_dtype_str: str = "auto",
+    ) -> tuple[int, ...]:
+        if block_size % 16 != 0:
+            raise ValueError("Block size must be a multiple of 16.")
+        # K and V are packed into the content dim: logical (B, H, N, 2*hs).
+        from vllm.v1.kv_cache_interface import (
+            get_kv_quant_mode as _gkqm,
+            int8_block_group_size,
+        )
+
+        _g = int8_block_group_size(cache_dtype_str)
+        if _g is not None and _gkqm(cache_dtype_str).is_int8_block:
+            # int8_block_g{G}: int8 data + 2*hs/G bytes of fp16 scales per
+            # half (hs/G scales, one per G-dim group).
+            if head_size % _g != 0:
+                raise ValueError(
+                    f"int8_block_g{_g} requires head_size % {_g} == 0, got {head_size}"
+                )
+            scale_pad = 2 * head_size // _g  # fp16 bytes; int8 elems == bytes
+            return (num_blocks, num_kv_heads, block_size, 2 * (head_size + scale_pad))
+        if kv_cache_uses_per_token_head_scales(cache_dtype_str):
+            # Pad each half of the content dim by
+            # sizeof(float32)/sizeof(cache_dtype) so the per-(token, head)
+            # scale fits inline after the quantized data (mirrors
+            # TritonAttentionBackend; see _ensure_scale_caches).
+            from vllm.utils.torch_utils import (
+                STR_DTYPE_TO_TORCH_DTYPE,
+                get_dtype_size as _get_dtype_size,
+            )
+
+            cache_dtype = STR_DTYPE_TO_TORCH_DTYPE[cache_dtype_str]
+            scale_pad = _get_dtype_size(torch.float32) // _get_dtype_size(
+                cache_dtype
+            )
+            return (num_blocks, num_kv_heads, block_size, 2 * (head_size + scale_pad))
+        return (num_blocks, num_kv_heads, block_size, 2 * head_size)
+
+    @classmethod
+    def customize_spec(cls, spec: "AttentionSpec") -> "AttentionSpec":
+        """Per-token-head modes pack inline fp32 scales after each half's
+        data, so the content is (K data + K scale + V data + V scale)."""
+        from vllm.v1.kv_cache_interface import int8_block_group_size
+
+        mode = spec.kv_quant_mode
+        if spec.state_content_bytes is not None:
+            return spec
+        if mode.is_int8_block:
+            # int8 data + fp16 group scales inline per half.
+            _g = mode.int8_block_group
+            content = 2 * (spec.head_size * 1 + 2 * spec.head_size // _g)
+            return replace(spec, state_content_bytes=content)
+        if not mode.is_per_token_head:
+            return spec
+        hs_k, hs_v = spec.head_size, spec.head_size_v
+        if mode == KVQuantMode.INT4_PER_TOKEN_HEAD:
+            hs_k, hs_v = hs_k // 2, hs_v // 2
+        scale_bytes = get_dtype_size(torch.float32)
+        content = (hs_k + hs_v) * get_dtype_size(spec.dtype) + 2 * scale_bytes
+        return replace(spec, state_content_bytes=content)
+
+    @staticmethod
+    def use_cascade_attention(*args, **kwargs) -> bool:
+        return False
+
+    @staticmethod
+    def get_builder_cls() -> type["RocmAttentionMetadataBuilder"]:
+        return RocmAttentionMetadataBuilder
+
+    @classmethod
+    def supports_attn_type(cls, attn_type: str) -> bool:
+        """RocmAiterUnifiedAttention supports all attention types."""
+        return attn_type in (
+            AttentionType.DECODER,
+            AttentionType.ENCODER,
+            AttentionType.ENCODER_ONLY,
+            AttentionType.ENCODER_DECODER,
+        )
+
+
+class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
+    # Per-token-head quant: scale views carved from inline head padding.
+    _k_scale_cache: torch.Tensor | None = None
+    _v_scale_cache: torch.Tensor | None = None
+    _k_data_cache: torch.Tensor | None = None
+    _v_data_cache: torch.Tensor | None = None
+    # int8_block_g{G} / VLLM_KV_G8: grouped fp16 scale views.
+    _g8_k: torch.Tensor | None = None
+    _g8_v: torch.Tensor | None = None
+
+    def fused_output_quant_supported(self, quant_key: QuantKey):
+        return quant_key == kFp8StaticTensorSym
+
+    def _ensure_scale_caches(self, kv_cache: torch.Tensor) -> None:
+        """Extract per-head scale views from the padded content dimension.
+
+        For the int8_block_g{G} modes this instead carves fp16 group-scale
+        views: (num_blocks, block_size, nkv, head_size // G) per half, with
+        the scales living in the widened pad region after each half's data.
+
+        The KV cache is packed as logical shape
+        ``(num_blocks, nkv, block_size, 2 * (hs + pad))``.  The content dim holds
+        ``[K(hs) | K_scale(pad) | V(hs) | V_scale(pad)]`` per (head, slot);
+        ``kv_cache`` must be the packed logical tensor (call before any
+        transpose), but may have HND or NHD physical strides.
+
+        Per-token-head scale shape: ``(num_blocks, block_size, num_kv_heads)``
+        """
+        if self._k_scale_cache is not None or self._g8_k is not None:
+            return
+
+        num_blocks, nkv, block_size, content = kv_cache.shape
+        dtype_sz = kv_cache.element_size()
+        padded_hs = content // 2
+
+        if self._is_int8_block:
+            assert dtype_sz == 1, "int8_block_g* caches must be int8 tensors"
+            g = self._block_g
+            # hs + 2*(hs//g) = padded_hs  ->  hs = padded_hs * g // (g + 2)
+            hs = padded_hs * g // (g + 2)
+            assert hs % g == 0 and hs + 2 * (hs // g) == padded_hs, (
+                f"int8_block_g{g}: content dim {content} incompatible "
+                f"(hs={hs}, pad={padded_hs - hs})"
+            )
+            groups = hs // g
+            raw = kv_cache.untyped_storage()
+            base_f16 = torch.tensor(
+                [], dtype=torch.float16, device=kv_cache.device
+            ).set_(raw)
+
+            def to_f16_units(elements: int) -> int:
+                nbytes = elements * dtype_sz
+                assert nbytes % 2 == 0
+                return nbytes // 2
+
+            strides = kv_cache.stride()
+            block_f16 = to_f16_units(strides[0])
+            head_f16 = to_f16_units(strides[1])
+            slot_f16 = to_f16_units(strides[2])
+            base_off_f16 = to_f16_units(kv_cache.storage_offset())
+            k_off = base_off_f16 + to_f16_units(hs)
+            v_off = base_off_f16 + to_f16_units(padded_hs + hs)
+
+            self._g8_k = torch.as_strided(
+                base_f16,
+                size=(num_blocks, block_size, nkv, groups),
+                stride=(block_f16, slot_f16, head_f16, 1),
+                storage_offset=k_off,
+            )
+            self._g8_v = torch.as_strided(
+                base_f16,
+                size=(num_blocks, block_size, nkv, groups),
+                stride=(block_f16, slot_f16, head_f16, 1),
+                storage_offset=v_off,
+            )
+            self._g8_k.fill_(1.0)
+            self._g8_v.fill_(1.0)
+
+            key_cache, value_cache = self._split_kv_cache(kv_cache)
+            self._k_data_cache = key_cache[..., :hs]
+            self._v_data_cache = value_cache[..., :hs]
+            logger.info_once(
+                "int8_block_g%d KV active: fp16 group scales inline "
+                "(%d groups/head, %d bytes/half)",
+                g, groups, padded_hs,
+            )
+            return
+
+        scale_pad = get_dtype_size(torch.float32) // dtype_sz  # e.g. 4
+        hs = padded_hs - scale_pad
+
+        raw = kv_cache.untyped_storage()
+        base_f32 = torch.tensor([], dtype=torch.float32, device=kv_cache.device).set_(
+            raw
+        )
+
+        def to_f32_units(elements: int) -> int:
+            nbytes = elements * dtype_sz
+            assert nbytes % 4 == 0
+            return nbytes // 4
+
+        # Actual strides (in float32 units) from the tensor. The logical cache
+        # may be physically NHD, so do not assume C-contiguous HND layout.
+        strides = kv_cache.stride()
+        block_f32 = to_f32_units(strides[0])
+        head_f32 = to_f32_units(strides[1])
+        slot_f32 = to_f32_units(strides[2])
+        # Scale sits at byte offset hs within each (K, then V) content half.
+        base_off_f32 = to_f32_units(kv_cache.storage_offset())
+        k_scale_off_f32 = base_off_f32 + to_f32_units(hs)
+        v_scale_off_f32 = base_off_f32 + to_f32_units(padded_hs + hs)
+
+        # K scales (first content half)
+        self._k_scale_cache = torch.as_strided(
+            base_f32,
+            size=(num_blocks, block_size, nkv),
+            stride=(block_f32, slot_f32, head_f32),
+            storage_offset=k_scale_off_f32,
+        )
+        self._k_scale_cache.fill_(1.0)
+
+        # V scales (second content half)
+        self._v_scale_cache = torch.as_strided(
+            base_f32,
+            size=(num_blocks, block_size, nkv),
+            stride=(block_f32, slot_f32, head_f32),
+            storage_offset=v_scale_off_f32,
+        )
+        self._v_scale_cache.fill_(1.0)
+
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
+        self._k_data_cache = key_cache[..., :hs]
+        self._v_data_cache = value_cache[..., :hs]
+
+        # G8 diagnostic mode (VLLM_KV_G8): side tensors for per-8-dim-group
+        # fp16 scales; data layout unchanged.
+        if _os.environ.get("VLLM_KV_G8"):
+            self._g8_k = torch.empty(
+                (num_blocks, block_size, nkv, hs // 8),
+                dtype=torch.float16,
+                device=kv_cache.device,
+            )
+            self._g8_v = torch.empty_like(self._g8_k)
+            self._g8_k.fill_(1.0)
+            self._g8_v.fill_(1.0)
+            logger.info_once(
+                "VLLM_KV_G8: g8+f16 KV active (side scales %s bytes each)",
+                self._g8_k.numel() * 2,
+            )
+
+    def __init__(
+        self,
+        num_heads: int,
+        head_size: int,
+        scale: float,
+        num_kv_heads: int,
+        alibi_slopes: list[float] | None,
+        sliding_window: int | None,
+        kv_cache_dtype: str,
+        logits_soft_cap: float | None = None,
+        attn_type: AttentionType = AttentionType.DECODER,
+        kv_sharing_target_layer_name: int | None = None,
+        sinks: torch.Tensor | None = None,
+    ) -> None:
+        super().__init__(
+            num_heads,
+            head_size,
+            scale,
+            num_kv_heads,
+            alibi_slopes,
+            sliding_window,
+            kv_cache_dtype,
+            logits_soft_cap,
+            attn_type,
+            kv_sharing_target_layer_name,
+            sinks,
+        )
+        logger.info_once(
+            "Using aiter unified attention for RocmAiterUnifiedAttentionImpl"
+        )
+        self.supports_quant_query_input = True
+
+        self._kv_quant_mode = get_kv_quant_mode(kv_cache_dtype)
+        self._is_per_token_head_quant = self._kv_quant_mode.is_per_token_head
+        self._is_int8_block = self._kv_quant_mode.is_int8_block
+        self._block_g = (
+            self._kv_quant_mode.int8_block_group if self._is_int8_block else None
+        )
+        # Grouped INT8 uses the fork's stride-aware kernels for both causal
+        # target attention and non-causal DFlash attention. Do not import the
+        # unrelated AITER unified kernel/config table on CDNA2 for this path.
+        self.unified_attention = None
+        if not self._is_int8_block:
+            from aiter.ops.triton.unified_attention import unified_attention
+
+            self.unified_attention = unified_attention
+
+    def _split_kv_cache(
+        self, kv_cache: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # (B, H, N, 2*hs) -> ((B, N, H, hs), (B, N, H, hs)).  Split on the
+        # actual content dim: per-token-head modes pad each half, so the
+        # content is 2 * (hs + scale_pad), not 2 * hs.
+        padded_hs = kv_cache.shape[-1] // 2
+        return kv_cache.transpose(1, 2).split(padded_hs, dim=-1)
+
+    def forward(
+        self,
+        layer: torch.nn.Module,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata: RocmAttentionMetadata,
+        output: torch.Tensor,
+        output_scale: torch.Tensor | None = None,
+        output_block_scale: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Forward pass with FlashAttention.
+
+        Args:
+            query: shape = [num_tokens, num_heads, head_size]
+            key: shape = [num_tokens, num_kv_heads, head_size]
+            value: shape = [num_tokens, num_kv_heads, head_size]
+            kv_cache: shape =
+                [num_blocks, 2, block_size, num_kv_heads, head_size]
+            attn_metadata: Metadata for attention.
+        Returns:
+            shape = [num_tokens, num_heads * head_size]
+        """
+        if output_block_scale is not None:
+            raise NotImplementedError(
+                "fused block_scale output quantization is not yet supported"
+                " for RocmAttentionImpl"
+            )
+
+        if attn_metadata is None:
+            # Profiling run.
+            return output.fill_(0)
+
+        assert attn_metadata.use_cascade is False
+
+        # IMPORTANT!
+        # NOTE(woosuk): With piece-wise CUDA graphs, this method is executed in
+        # eager-mode PyTorch. Thus, we need to be careful about any CPU overhead
+        # in this method. For example, `view` and `slice` (or `[:n]`) operations
+        # are surprisingly slow even in the case they do not invoke any GPU ops.
+        # Minimize the PyTorch ops in this method as much as possible.
+        # Whenever making a change in this method, please benchmark the
+        # performance to make sure it does not introduce any overhead.
+
+        num_actual_tokens = attn_metadata.num_actual_tokens
+
+        # Handle encoder attention differently - no KV cache needed
+        if self.attn_type in (AttentionType.ENCODER_ONLY, AttentionType.ENCODER):
+            # For encoder attention,
+            # we use direct Q, K, V tensors without caching
+            return self._forward_encoder_attention(
+                query[:num_actual_tokens],
+                key[:num_actual_tokens],
+                value[:num_actual_tokens],
+                output[:num_actual_tokens],
+                attn_metadata,
+                layer,
+            )
+
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
+
+        softmax_scale = self.scale
+        if self._is_per_token_head_quant or self._is_int8_block:
+            self._ensure_scale_caches(kv_cache)
+            key_cache = self._k_data_cache
+            value_cache = self._v_data_cache
+            q_descale = None
+            k_descale = None
+            v_descale = None
+            k_scale_cache = self._k_scale_cache
+            v_scale_cache = self._v_scale_cache
+        elif is_quantized_kv_cache(self.kv_cache_dtype):
+            key_cache = key_cache.view(self.fp8_dtype)
+            value_cache = value_cache.view(self.fp8_dtype)
+            q_descale = layer._q_scale if query.dtype == self.fp8_dtype else None
+            k_descale = layer._k_scale
+            v_descale = layer._v_scale
+            k_scale_cache = None
+            v_scale_cache = None
+        else:
+            q_descale = None
+            k_descale = None
+            v_descale = None
+            k_scale_cache = None
+            v_scale_cache = None
+
+        _sc = os.environ.get("VLLM_KV_STABLECHECK")
+        if (
+            _sc
+            and not torch.cuda.is_current_stream_capturing()
+            and attn_metadata.block_table is not None
+            and key_cache is not None
+            and attn_metadata.block_table.shape[0] > 0
+        ):
+            try:
+                self._stable_kv_check(
+                    attn_metadata.block_table, kv_cache,
+                    attn_metadata.seq_lens,
+                )
+            except Exception:
+                if not getattr(self, "_sc_err", False):
+                    self._sc_err = True
+                    logger.warning("KV-STABLECHECK failed", exc_info=True)
+
+        _bt = os.environ.get("VLLM_KV_BTSCHECK")
+        if (
+            _bt
+            and not torch.cuda.is_current_stream_capturing()
+            and attn_metadata.block_table is not None
+            and attn_metadata.seq_lens is not None
+            and attn_metadata.block_table.shape[0] > 0
+        ):
+            try:
+                self._bt_stable_check(
+                    attn_metadata.block_table, attn_metadata.seq_lens,
+                    attn_metadata.slot_mapping,
+                    attn_metadata.query_start_loc,
+                    attn_metadata.num_actual_tokens,
+                    attn_metadata.max_query_len,
+                )
+            except Exception:
+                if not getattr(self, "_bt_err", False):
+                    self._bt_err = True
+                    logger.warning("KV-BTSCHECK failed", exc_info=True)
+
+        _ns = os.environ.get("VLLM_KV_NANSCAN") or (
+            os.path.exists(
+                "/home/curved/vllm-gfx908/logs/serve_recipe_qwen38/KVNANSCAN"
+            )
+            and "/home/curved/vllm-gfx908/logs/garble/kvnanscan"
+        )
+        if (
+            _ns
+            and not torch.cuda.is_current_stream_capturing()
+            and attn_metadata.block_table is not None
+            and kv_cache is not None
+        ):
+            try:
+                self._kv_nanscan(attn_metadata.block_table, kv_cache, _ns)
+            except Exception:
+                if not getattr(self, "_ns_err", False):
+                    self._ns_err = True
+                    logger.warning("KV-NANSCAN failed", exc_info=True)
+
+        cu_seqlens_q = attn_metadata.query_start_loc
+        seqused_k = attn_metadata.seq_lens
+        max_seqlen_q = attn_metadata.max_query_len
+        max_seqlen_k = attn_metadata.max_seq_len
+        block_table = attn_metadata.block_table
+
+        if attn_metadata.causal:
+            if getattr(self, "_g8_k", None) is not None:
+                # int8_block_g* / G8 diagnostic mode: route through the vLLM
+                # triton unified kernel. E10 speed fix: (a) the kernel folds
+                # the per-group scales into per-group partial dots (no
+                # full-tile fp32 dequant), and (b) multi-token verify batches
+                # (q<=8) use the 3D split-K path with preallocated segment
+                # buffers — at C6/20k this took the attention call from
+                # ~16.5ms to ~2ms. Kill-switch: VLLM_G128_ATTN3D=0.
+                from vllm.v1.attention.ops.triton_unified_attention import (
+                    unified_attention as triton_unified_attention,
+                )
+
+                _attn3d = os.environ.get("VLLM_G128_ATTN3D", "1") == "1"
+                _segm_kw = {}
+                if _attn3d:
+                    if not hasattr(self, "_segm_buffers"):
+                        self._alloc_segm_buffers(kv_cache.device)
+                    _segm_kw = dict(
+                        num_par_softmax_segments=self._segm_splits,
+                        softmax_segm_output=self._segm_out,
+                        softmax_segm_max=self._segm_max,
+                        softmax_segm_expsum=self._segm_sum,
+                        seq_threshold_3D=self._segm_seq_threshold,
+                        max_flash_decoding_splits=self._segm_splits,
+                    )
+                    os.environ.setdefault("VLLM_UA_3D_MAXQ", "8")
+
+                triton_unified_attention(
+                    q=query[:num_actual_tokens],
+                    k=key_cache,
+                    v=value_cache,
+                    out=output[:num_actual_tokens],
+                    cu_seqlens_q=cu_seqlens_q,
+                    max_seqlen_q=max_seqlen_q,
+                    seqused_k=seqused_k,
+                    max_seqlen_k=max_seqlen_k,
+                    softmax_scale=softmax_scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                    window_size=self.sliding_window,
+                    block_table=block_table,
+                    softcap=self.logits_soft_cap,
+                    kv_quant_mode=self._kv_quant_mode,
+                    q_descale=None,
+                    k_descale=None,
+                    v_descale=None,
+                    sinks=self.sinks,
+                    output_scale=output_scale,
+                    k_scale_cache=k_scale_cache,
+                    v_scale_cache=v_scale_cache,
+                    g8_k_scale=self._g8_k,
+                    g8_v_scale=self._g8_v,
+                    **_segm_kw,
+                )
+                _ra8 = os.environ.get("VLLM_UA_READAUDIT_G8") or (
+                    os.path.exists(
+                        "/home/curved/vllm-gfx908/logs/serve_recipe_qwen38/READAUDITG8"
+                    )
+                    and "/home/curved/vllm-gfx908/logs/garble/readauditg8"
+                )
+                if _ra8 and not torch.cuda.is_current_stream_capturing():
+                    try:
+                        self._ua_read_audit_g8(
+                            query, output, key_cache, value_cache,
+                            cu_seqlens_q, seqused_k, block_table,
+                            softmax_scale, num_actual_tokens,
+                        )
+                    except Exception as e:
+                        if not getattr(self, "_ra8_err", False):
+                            self._ra8_err = True
+                            logger.warning("UA-READAUDIT-G8 failed: %s", e)
+            else:
+                # VLLM_ATTNTRACE: time just the unified_attention call
+                import os as _os, time as _time
+                _pace = _os.environ.get("VLLM_ATTN_PACE", "0")
+                _at = _pace == "1" or \
+                    _os.environ.get("VLLM_ATTNTRACE") is not None
+                # PACE=2: pace only target forwards (workspace lane 0) so the
+                # draft-verify async overlap is preserved (the spec-on
+                # regression of PACE=1); the CPU-race pathology lives in the
+                # long target forward's eager dispatch.
+                if _pace == "2":
+                    from vllm.v1.worker.workspace import _workspace_lane
+                    _at = _workspace_lane.get() == 0
+                _at_box = getattr(self, "_attntrace", None) \
+                    if _at or _os.environ.get("VLLM_ATTNTRACE") is not None else None
+                if _at and _at_box is None:
+                    _at_box = self._attntrace = {"k": 0.0, "w": 0.0, "n": 0}
+                _ev0 = torch.cuda.Event(enable_timing=True) if _at_box else None
+                if _ev0 is not None:
+                    _ev0.record()
+                self.unified_attention(
+                q=query[:num_actual_tokens],
+                k=key_cache,
+                v=value_cache,
+                out=output[:num_actual_tokens],
+                cu_seqlens_q=cu_seqlens_q,
+                max_seqlen_q=max_seqlen_q,
+                seqused_k=seqused_k,
+                max_seqlen_k=max_seqlen_k,
+                softmax_scale=softmax_scale,
+                causal=True,
+                alibi_slopes=self.alibi_slopes,
+                window_size=self.sliding_window,
+                block_table=block_table,
+                softcap=self.logits_soft_cap,
+                q_descale=q_descale,
+                k_descale=k_descale,
+                v_descale=v_descale,
+                sinks=self.sinks,
+                output_scale=output_scale,
+                k_scale_cache=k_scale_cache,
+                v_scale_cache=v_scale_cache,
+                )
+                if _at_box is not None:
+                    _ev1 = torch.cuda.Event(enable_timing=True)
+                    _ev1.record()
+                    if not torch.cuda.is_current_stream_capturing():
+                        torch.cuda.synchronize()
+                        _at_box["k"] += _ev0.elapsed_time(_ev1)
+                        _at_box["w"] += 0.0
+                        _at_box["n"] += 1
+                        if _at_box["n"] % 100 == 0:
+                            n = _at_box["n"]
+                            print(f"[attntrace] calls {n} | kernel "
+                                  f"{_at_box['k']/n*1000:8.1f} us/call", flush=True)
+                            _at_box.update(k=0.0, w=0.0, n=0)
+            import os as _os
+            _ra = _os.environ.get("VLLM_UA_READAUDIT")
+            if _ra and not torch.cuda.is_current_stream_capturing():
+                try:
+                    self._ua_read_audit(
+                        query, output, key_cache, value_cache,
+                        k_scale_cache, v_scale_cache, cu_seqlens_q,
+                        seqused_k, block_table, softmax_scale, num_actual_tokens,
+                    )
+                except Exception as e:
+                    if not getattr(self, "_ra_err", False):
+                        self._ra_err = True
+                        logger.warning("UA-READAUDIT failed: %s", e)
+        else:
+            # The aiter kernel is causal-only. Non-causal cross-attention
+            # (ENCODER_DECODER, e.g. Whisper) falls back to the vLLM Triton
+            # unified kernel, which shares this layout and honors the flag.
+            from vllm.v1.attention.ops.triton_unified_attention import (
+                unified_attention as triton_unified_attention,
+            )
+
+            _segm_kw = {}
+            if (
+                os.environ.get("VLLM_G128_DRAFT_GLUON") == "1"
+                and getattr(self, "_g8_k", None) is not None
+                and max_seqlen_q <= 8
+            ):
+                if not hasattr(self, "_segm_buffers"):
+                    self._alloc_segm_buffers(kv_cache.device)
+                _segm_kw = dict(
+                    num_par_softmax_segments=self._segm_splits,
+                    softmax_segm_output=self._segm_out,
+                    softmax_segm_max=self._segm_max,
+                    softmax_segm_expsum=self._segm_sum,
+                    seq_threshold_3D=self._segm_seq_threshold,
+                    max_flash_decoding_splits=self._segm_splits,
+                )
+                os.environ.setdefault("VLLM_UA_3D_MAXQ", "8")
+
+            descale_shape = (cu_seqlens_q.shape[0] - 1, key_cache.shape[2])
+            triton_unified_attention(
+                q=query[:num_actual_tokens],
+                k=key_cache,
+                v=value_cache,
+                out=output[:num_actual_tokens],
+                cu_seqlens_q=cu_seqlens_q,
+                max_seqlen_q=max_seqlen_q,
+                seqused_k=seqused_k,
+                max_seqlen_k=max_seqlen_k,
+                softmax_scale=softmax_scale,
+                causal=attn_metadata.causal,
+                alibi_slopes=self.alibi_slopes,
+                window_size=self.sliding_window,
+                block_table=block_table,
+                softcap=self.logits_soft_cap,
+                # Without this the kernel defaults to KVQuantMode.NONE and
+                # reads an int8-PTH cache as raw bytes (no scale load) —
+                # the DFlash2 noncausal draft collapses to garbage scores.
+                kv_quant_mode=self._kv_quant_mode,
+                q_descale=q_descale,
+                k_descale=(
+                    k_descale.expand(descale_shape)
+                    if k_descale is not None
+                    else None
+                ),
+                v_descale=(
+                    v_descale.expand(descale_shape)
+                    if v_descale is not None
+                    else None
+                ),
+                sinks=self.sinks,
+                output_scale=output_scale,
+                k_scale_cache=k_scale_cache,
+                v_scale_cache=v_scale_cache,
+                g8_k_scale=getattr(self, "_g8_k", None),
+                g8_v_scale=getattr(self, "_g8_v", None),
+                **_segm_kw,
+            )
+
+        return output
+
+
+    def _ua_read_audit_g8(
+        self, query, output, key_cache, value_cache, cu_seqlens_q,
+        seqused_k, block_table, softmax_scale, num_actual_tokens,
+    ):
+        """Flag/env-gated (VLLM_UA_READAUDIT_G8 / READAUDITG8 flag): for the
+        leading request's LAST query row, reference-attend from the g128
+        cache bytes with exact group-scale dequant (fp32 softmax) and
+        compare against the kernel's output row. A large rel divergence at
+        high context convicts the read path; small quantization-level rel
+        (~1e-2) exonerates it."""
+        import json as _json
+        import os as _os
+
+        ln = getattr(self, "_ra8_layer", None)
+        if ln is None:
+            n = type(self)._ra8_inst = getattr(type(self), "_ra8_inst", 0)
+            type(self)._ra8_inst = n + 1
+            self._ra8_layer = ln = n
+        if ln >= 4:
+            return
+        if cu_seqlens_q.shape[0] < 2:
+            return
+        q1 = int(cu_seqlens_q[1].item())
+        if q1 < 1 or q1 > num_actual_tokens:
+            return
+        row = q1 - 1  # last query row of the leading request
+        sk = int(seqused_k[0].item())
+        ctx = sk  # causal: this row attends [0, sk) when row == sk-1
+        if ctx <= 0 or ctx > 40000:
+            return
+        bs = key_cache.shape[1]
+        nblk = (ctx + bs - 1) // bs
+        bt0 = block_table[0, :nblk].long()
+        K = key_cache[bt0].float()          # [nblk, bs, h, d]
+        V = value_cache[bt0].float()
+        ks = self._g8_k[bt0].float()        # [nblk, bs, h, groups]
+        vs = self._g8_v[bt0].float()
+        g = K.shape[-1] // ks.shape[-1]
+        K = K * ks.repeat_interleave(g, dim=-1)
+        V = V * vs.repeat_interleave(g, dim=-1)
+        K = K.reshape(-1, K.shape[-2], K.shape[-1])[:ctx]
+        V = V.reshape(-1, V.shape[-2], V.shape[-1])[:ctx]
+        q = query[row].float()
+        got = output[row].float()
+        num_h, num_kv = q.shape[0], K.shape[1]
+        rel = []
+        for h in range(num_h):
+            kv_h = h * num_kv // num_h
+            s = (K[:, kv_h, :] @ q[h]) * softmax_scale
+            s = s - s.max()
+            p = torch.softmax(s, dim=-1)
+            o = p @ V[:, kv_h, :]
+            gg = got[h]
+            rel.append(float((o - gg).abs().max() / gg.abs().max().clamp(min=1e-6)))
+        rec = {"layer": ln, "call": getattr(self, "_ra8_call", 0),
+               "ctx": ctx, "row": row, "rel": round(max(rel), 4)}
+        self._ra8_call = getattr(self, "_ra8_call", 0) + 1
+        out = _os.environ.get("VLLM_UA_READAUDIT_G8") or \
+            "/home/curved/vllm-gfx908/logs/garble/readauditg8"
+        _os.makedirs(out, exist_ok=True)
+        with open(_os.path.join(out, f"rag8_{_os.getpid()}.jsonl"), "a") as f:
+            f.write(_json.dumps(rec) + "\n")
+
+    def _ua_read_audit(
+        self,
+        query: torch.Tensor,
+        output: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        k_scale_cache: torch.Tensor | None,
+        v_scale_cache: torch.Tensor | None,
+        cu_seqlens_q: torch.Tensor,
+        seqused_k: torch.Tensor,
+        block_table: torch.Tensor,
+        softmax_scale: float,
+        num_actual_tokens: int,
+    ) -> None:
+        """Env-gated (VLLM_UA_READAUDIT): reference-attend the FIRST query row
+        of batch row 0 from the int8-PTH cache bytes (exact dequant, fp32
+        softmax) and compare against the kernel's output row. The cache is
+        already verified byte-exact at write time (VLLM_KV_READBACK), so a
+        large divergence here convicts the READ path (kernel/metadata), not
+        the cache content. Logs one jsonl line per audited layer/round.
+        """
+        import json as _json
+
+        ln = getattr(self, "_ra_layer", None)
+        if ln is None:
+            # audit at most 4 layer instances to bound cost
+            n = type(self)._ra_instances = getattr(type(self), "_ra_instances", 0)
+            type(self)._ra_instances = n + 1
+            self._ra_layer = n
+        if self._ra_layer >= 4:
+            return
+        q0 = int(cu_seqlens_q[0].item())
+        q1 = int(cu_seqlens_q[1].item()) if cu_seqlens_q.shape[0] > 1 else q0
+        q_len = q1 - q0
+        if q_len < 2 or q0 != 0:
+            return  # only spec verify rows leading the batch
+        sk = int(seqused_k[0].item())
+        ctx = sk - q_len  # row 0 attends [0, ctx)
+        if ctx <= 0:
+            return
+        bs = key_cache.shape[1]
+        nblk = (ctx + bs - 1) // bs
+        bt0 = block_table[0, :nblk].long()
+        # dequant K/V for [0, ctx)
+        K = key_cache[bt0].float()  # [nblk, bs, h, d]
+        V = value_cache[bt0].float()
+        if k_scale_cache is not None:
+            ks = k_scale_cache[bt0].float()  # [nblk, bs, h]
+            K = K * ks.unsqueeze(-1)
+            vs = v_scale_cache[bt0].float()
+            V = V * vs.unsqueeze(-1)
+        K = K.reshape(-1, K.shape[-2], K.shape[-1])[:ctx]  # [ctx, h_kv, d]
+        V = V.reshape(-1, V.shape[-2], V.shape[-1])[:ctx]
+        q = query[0].float()  # [h_q, d] (row 0 of the request's queries)
+        got = output[0].float()
+        # per q head: scores over ctx, softmax, weighted V (GQA: h_q -> h_kv)
+        num_h = q.shape[0]
+        num_kv = K.shape[1]
+        rel = []
+        for h in range(num_h):
+            kv_h = h * num_kv // num_h
+            s = (K[:, kv_h, :] @ q[h]) * softmax_scale
+            s = s - s.max()
+            p = torch.softmax(s, dim=-1)
+            o = p @ V[:, kv_h, :]
+            g = got[h]
+            denom = g.abs().max().clamp(min=1e-6)
+            rel.append(float((o - g).abs().max() / denom))
+        rec = {
+            "layer": self._ra_layer,
+            "call": getattr(self, "_ra_call", 0),
+            "ctx": ctx,
+            "q_len": q_len,
+            "rel": round(max(rel), 4),
+        }
+        self._ra_call = getattr(self, "_ra_call", 0) + 1
+        out = _os.environ["VLLM_UA_READAUDIT"]
+        _os.makedirs(out, exist_ok=True)
+        with open(_os.path.join(out, f"ra_{_os.getpid()}.jsonl"), "a") as f:
+            f.write(_json.dumps(rec) + "\n")
+
+    def _kv_readback_check(self, key, value, key_cache, value_cache, slot_mapping):
+        """Reference-quantize K/V, snapshot target slots before the kernel,
+        run the kernel, read back, compare. Logs KVREADBACK lines."""
+        import torch as _t
+        valid = slot_mapping >= 0
+        slots = slot_mapping[valid]
+        if slots.numel() == 0:
+            return
+        # Deduplicate slots keeping the LAST occurrence: spec-decode
+        # rewrites rejected slots in the same call (last write wins), so a
+        # first-occurrence reference would false-positive on every rewrite.
+        sm = slot_mapping.clone()
+        seen = {}
+        order = []
+        for i, sv in enumerate(sm.tolist()):
+            if sv < 0:
+                continue
+            if sv in seen:
+                order[seen[sv]] = -1
+            seen[sv] = len(order)
+            order.append(i)
+        keep_idx = [i for i in order if i >= 0]
+        if not keep_idx:
+            self._rb_pending = None
+            return
+        keep = _t.tensor(keep_idx, device=sm.device, dtype=_t.long)
+        n, nkv, hs = key.shape
+        pad = key_cache.shape[-1] - hs  # inline scale slots
+        def quant_ref(x):
+            sc = x.float().abs().amax(dim=-1, keepdim=True).clamp(min=1e-12) / 127.0
+            q = _t.clamp((x.float() / sc).round(), -127, 127).to(_t.int8)
+            return q, sc.squeeze(-1)
+        keyv = key[keep]
+        valuev = value[keep]
+        slots = sm[keep]
+        kq, ksc = quant_ref(keyv)
+        vq, vsc = quant_ref(valuev)
+        # QUANT-ERROR stats (pass 108): empirical per-element relative error
+        # of the int8-PTH quantization vs the theoretical uniform bound
+        # (~0.11% RMS, 0.39% worst). Empirical >> bound = a quantizer bug;
+        # ~bound = fundamental int8 noise.
+        _qe = _os.environ.get("VLLM_KV_READBACK")
+        if _qe:
+            try:
+                for tag, x, q, sc in (("k", keyv, kq, ksc), ("v", valuev, vq, vsc)):
+                    deq = q.float() * sc.unsqueeze(-1)
+                    err = (deq - x.float()).abs()
+                    # scale-relative: textbook round-to-nearest RMS = sc/sqrt(12)
+                    # ~ 0.289*sc; empirical >> that = quantizer bug
+                    esc = err / sc.clamp(min=1e-12).unsqueeze(-1)
+                    self._qe_stats = getattr(self, "_qe_stats", {})
+                    st = self._qe_stats.setdefault(tag, [0.0, 0.0, 0])
+                    st[0] = max(st[0], float(esc.max()))
+                    st[1] += float(esc.pow(2).sum())
+                    st[2] += esc.numel()
+                    # GROUP-SIZE + scale-dtype comparison (Q8_0 feasibility):
+                    # absolute RMS error of absmax-quant variants on the same
+                    # live tensors, normalized to the current scheme (g128,
+                    # f32 scale). f16 variants simulate fp16 scale STORAGE
+                    # (scale cast to f16 and back before quant+dequant).
+                    stg = self._qe_stats.setdefault(
+                        tag + "g", {"n": 0, "v": {}}
+                    )
+                    xf = x.float()
+                    n_, h_, d_ = xf.shape
+                    base = (
+                        xf.abs()
+                        .amax(-1, keepdim=True)
+                        .clamp(min=1e-12)
+                        / 127.0
+                    )
+                    qb = torch.clamp((xf / base).round(), -127, 127) * base
+                    stg["v"].setdefault("g128f32", 0.0)
+                    stg["v"]["g128f32"] += float((qb - xf).pow(2).sum())
+                    for name, g, sdt in (
+                        ("g32f32", 32, None),
+                        ("g32f16", 32, torch.float16),
+                        ("g16f32", 16, None),
+                        ("g16f16", 16, torch.float16),
+                        ("g8f16", 8, torch.float16),
+                        ("g4f16", 4, torch.float16),
+                    ):
+                        gs = (
+                            xf.abs()
+                            .reshape(n_, h_, d_ // g, g)
+                            .amax(-1, keepdim=True)
+                            .clamp(min=1e-12)
+                            / 127.0
+                        )
+                        if sdt is not None:
+                            gs = gs.to(sdt).float().clamp(min=1e-12)
+                        gs = gs.expand(n_, h_, d_ // g, g).reshape(n_, h_, d_)
+                        qg = torch.clamp((xf / gs).round(), -127, 127) * gs
+                        stg["v"].setdefault(name, 0.0)
+                        stg["v"][name] += float((qg - xf).pow(2).sum())
+                    stg["n"] += xf.numel()
+                    # FP16 / BF16 storage simulation on the same tensors:
+                    # err = (x cast to dtype and back) - x
+                    for name, dt in (
+                        ("f16", torch.float16),
+                        ("bf16", torch.bfloat16),
+                    ):
+                        e = (xf.to(dt).float() - xf).pow(2).sum()
+                        stg["v"].setdefault(name, 0.0)
+                        stg["v"][name] += float(e)
+                if getattr(self, "_rb_counter", 0) - getattr(self, "_qe_flushed", 0) >= 200:
+                    import json as _jsonq
+
+                    _os.makedirs(_qe + "_quanterr", exist_ok=True)
+                    with open(
+                        _os.path.join(_qe + "_quanterr", f"qe_{_os.getpid()}.jsonl"),
+                        "a",
+                    ) as _f:
+                        for tag, st in self._qe_stats.items():
+                            if tag.endswith("g"):
+                                n_e = max(st["n"], 1)
+                                rec = {"c": self._rb_counter, "t": tag, "n": st["n"]}
+                                b = (st["v"].get("g128f32", 0.0) / n_e) ** 0.5
+                                for name, e2 in st["v"].items():
+                                    rms = (e2 / n_e) ** 0.5
+                                    rec[name] = rms
+                                    if b > 0:
+                                        rec[name + "_rel"] = rms / b
+                                _f.write(_jsonq.dumps(rec) + "\n")
+                                continue
+                            _f.write(_jsonq.dumps({
+                                "c": self._rb_counter, "t": tag,
+                                "esc_max": st[0],
+                                "esc_rms": (st[1] / max(st[2], 1)) ** 0.5,
+                                "n": st[2],
+                            }) + "\n")
+                    self._qe_flushed = self._rb_counter
+            except Exception:
+                pass
+        bs = key_cache.shape[1]
+        rows = (slots // bs).long()
+        cols = (slots % bs).long()
+        # snapshot pre-write contents at those slots (first head only)
+        pre_k = key_cache[rows, cols, 0, :].clone()
+        self._rb_counter = getattr(self, "_rb_counter", 0) + 1
+        idx = getattr(self, "_rb_idx", None)
+        if idx is None:
+            idx = _t.arange(slots.numel(), device=slots.device)
+            self._rb_idx = idx
+        # stash reference for post-kernel compare (kernel runs after return)
+        self._rb_pending = (rows, cols, kq, ksc, vq, vsc, slots, pre_k, key_cache)
+
+    def _kv_readback_finalize(self):
+        """Compare the cache against the stashed reference (call after the
+        kernel has run)."""
+        import torch as _t
+        p = getattr(self, "_rb_pending", None)
+        if p is None:
+            return
+        rows, cols, kq, ksc, vq, vsc, slots, pre_k, key_cache = p
+        self._rb_pending = None
+        got_k = key_cache[rows, cols, 0, :kq.shape[-1]]
+        ref_k = kq[:, 0, :]
+        # STALE-DETECTOR: keep the previous step's reference for the same
+        # impl instance; a mismatch that equals LAST step's K at this slot
+        # means the write never landed (stale), vs unrelated bytes.
+        prev = getattr(self, "_rb_prev", None)  # {slot: ref bytes}
+        diff = (got_k.int() - ref_k.int()).abs()
+        # Tolerate off-by-one rounding-mode differences (kernel rounds
+        # half-to-even; torch.round is half-away).
+        mism = (diff > 1).any(dim=-1)
+        n_mism = int(mism.sum())
+        if n_mism:
+            worst = int(diff.max())
+            stale = 0
+            allprev = getattr(self, "_rb_all", {})
+            stale_query = 0
+            for j in mism.nonzero().flatten().tolist():
+                sv = int(slots[j])
+                if sv in prev and (got_k[j].int() - prev[sv]).abs().max() <= 1:
+                    stale += 1
+                if sv in allprev and (got_k[j].int() - allprev[sv]).abs().max() <= 1:
+                    stale_query += 1
+            logger.warning(
+                "KVREADBACK MISMATCH layer=%s mismatches=%d/%d worst=%d stale_prev=%d stale_query=%d slots=%s",
+                getattr(self, "_rb_layer", "?"), n_mism, slots.numel(),
+                worst, stale, stale_query, slots[mism][:6].tolist())
+        new_prev = {int(sv): got_k[j].clone()
+                    for j, sv in enumerate(slots.tolist())}
+        # Merge (not replace): keep query-write bytes too, so a later
+        # context mismatch can be matched against the previous QUERY K at
+        # that slot (cross-step rollback overlap).
+        merged = dict(getattr(self, "_rb_all", {}))
+        merged.update(new_prev)
+        self._rb_prev = new_prev
+        self._rb_all = merged
+
+    _SC_CAP = 8192
+    _SC_DUMP_EVERY = 256
+
+    _SEGM_POOL: dict = {}
+
+    def _alloc_segm_buffers(self, device) -> None:
+        """Allocate (once per (device, num_heads)) the 3D split-K segment
+        buffers shared by every layer's backend instance. Sized for
+        verify-shaped decode batches: rows = max q tokens (seqs x q_len),
+        splits = 64 (adaptive picker stays under this)."""
+        key = (str(device), self.num_heads)
+        cached = RocmAiterUnifiedAttentionImpl._SEGM_POOL.get(key)
+        if cached is None:
+            import math
+
+            hp = 1 << (int(math.log2(self.head_size - 1)) + 1)  # next pow2
+            rows = 256
+            splits = 64
+            cached = (
+                torch.empty((rows, self.num_heads, splits, hp),
+                            dtype=torch.float32, device=device),
+                torch.empty((rows, self.num_heads, splits),
+                            dtype=torch.float32, device=device),
+                torch.empty((rows, self.num_heads, splits),
+                            dtype=torch.float32, device=device),
+                splits,
+                256,  # seq threshold (num_seqs gate; generous)
+            )
+            RocmAiterUnifiedAttentionImpl._SEGM_POOL[key] = cached
+        (self._segm_out, self._segm_max, self._segm_sum,
+         self._segm_splits, self._segm_seq_threshold) = cached
+
+
+    def _kv_nanscan(self, block_table, kv_cache, out_dir):
+        """Env/flag-gated (VLLM_KV_NANSCAN): one-shot health scan (at the
+        400th forward) of row 0's attention-KV blocks: per-page nonzero-int8
+        fraction and non-finite fp16 count. Pages whose data is all-zero or
+        whose scales are non-finite read as uninformative to attention —
+        the suspected G1 content failure at long context."""
+        import json as _json
+        import os as _os
+
+        self._ns_n = getattr(self, "_ns_n", 0) + 1
+        if self._ns_n % 500 != 0 or self._ns_n < 500:
+            return
+        row = 0
+        uw = int((block_table[row] > 0).count_nonzero())
+        if uw < 2:
+            return
+        stats = []
+        raw = kv_cache if kv_cache.dtype in (torch.bfloat16, torch.float16, torch.float32) \
+            else kv_cache.view(torch.uint8)
+        for c in range(uw):
+            bid = int(block_table[row, c])
+            if bid <= 0:
+                continue
+            page = raw[bid]
+            if page.dtype == torch.uint8:
+                nz = int((page != 0).sum())
+                f16 = page.view(torch.float16)
+                bad = (~torch.isfinite(f16))
+                ninf = int(bad.sum())
+            else:
+                nz = int((page != 0).sum())
+                bad = (~torch.isfinite(page))
+                ninf = int(bad.sum())
+            # slot histogram of non-finite entries: 8 buckets over the page
+            # slots. Non-finite mass below the write frontier (early slots
+            # of settled pages) = real stored-KV corruption; mass only in
+            # late/unwritten slots = allocator garbage (never read).
+            bsz = max(page.shape[1] if page.dim() > 1 else page.numel(), 1)
+            flat = bad.reshape(bsz, -1).any(dim=1)
+            hist = [int(flat[i * bsz // 8:(i + 1) * bsz // 8].sum())
+                    for i in range(8)]
+            # one-shot layout debug: shape/stride/dtype + first non-finite
+            # element's full index
+            dbg = None
+            if ninf and not getattr(self, "_ns_dbg", False):
+                self._ns_dbg = True
+                idx2d = bad.reshape(bsz, -1).nonzero()[0].tolist()
+                full = bad.nonzero()[0].tolist()
+                dbg = {
+                    "shape": list(page.shape), "stride": list(page.stride()),
+                    "dtype": str(page.dtype),
+                    "first_slot": idx2d, "first_flat_idx": full,
+                    "val": float(page.reshape(-1)[full[0]]) if full else None,
+                }
+            stats.append((c, bid, nz, page.numel(), ninf, hist, dbg))
+        path = f"{out_dir}/nanscan_{_os.getpid()}.jsonl"
+        _os.makedirs(out_dir, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(_json.dumps({"n": self._ns_n, "uw": uw, "pages": stats[:64]}) + "\n")
+
+    def _bt_stable_check(self, block_table, seq_lens, slot_mapping,
+                         query_start_loc, num_actual_tokens, max_query_len):
+        """Env-gated (VLLM_KV_BTSCHECK): per-forward md5 of the GPU block
+        table's SETTLED prefix (entries [0, uw-2)) for scheduler rows 0/1,
+        plus seq_lens, the slot_mapping (KV write targeting for this step's
+        new tokens) and query_start_loc (query positions). The settled
+        prefix of a running request must never change during decode;
+        slot_mapping for a decode step must target the frontier slots.
+        A change in either = forward-metadata corruption (the exact tensors
+        attention consumes), which scrambles which KV blocks are read or
+        written while leaving stored KV bytes intact."""
+        import hashlib as _hl
+        import json as _json
+
+        self._bt_n = getattr(self, "_bt_n", 0) + 1
+        if self._bt_n > 20000:
+            return
+        if not hasattr(self, "_bt_inst"):
+            cls = type(self)
+            cls._bt_registry = getattr(cls, "_bt_registry", {})
+            self._bt_inst = cls._bt_registry.setdefault(
+                id(self), len(cls._bt_registry))
+        out = os.environ["VLLM_KV_BTSCHECK"]
+        recs = []
+        for r in range(min(block_table.shape[0], 2)):
+            uw = int((block_table[r] > 0).count_nonzero())
+            settled = max(uw - 2, 0)
+            h = _hl.md5(
+                block_table[r, :settled].cpu().numpy().tobytes()
+            ).hexdigest()[:10]
+            # aliasing detector: a physical page handed to the frontier
+            # that is still referenced at an earlier position = duplicate bid
+            bids_np = block_table[r, :uw].cpu().numpy()
+            uniq = len(set(bids_np.tolist()))
+            dup = uw - uniq
+            tail3 = bids_np[-3:].tolist() if uw >= 3 else bids_np.tolist()
+            recs.append((settled, int(seq_lens[r]), h, dup, tail3))
+        sm = slot_mapping[:num_actual_tokens]
+        first_slots = sm[:min(8, sm.numel())].cpu().tolist()
+        path = f"{out}/bt_{os.getpid()}.jsonl"
+        os.makedirs(out, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(_json.dumps({
+                "n": self._bt_n,
+                "inst": self._bt_inst,
+                "bt": recs,
+                "q": [num_actual_tokens, max_query_len],
+                "sm": _hl.md5(sm.cpu().numpy().tobytes()).hexdigest()[:10],
+                "s0": first_slots,
+            }) + "\n")
+
+    def _stable_kv_check(self, block_table, kv_cache, seq_lens=None):
+        """Env-gated (VLLM_KV_STABLECHECK): per-forward byte-checksum of the
+        FULL stable KV region (all blocks behind the write frontier, K+V+
+        scales via the raw packed tensor) for the first two scheduler rows.
+
+        Sums are computed on-GPU into a preallocated buffer (no per-step
+        CPU sync, to avoid fencing any copy-engine/compute race) and dumped
+        every _SC_DUMP_EVERY steps with a stable-region bid fingerprint and
+        seq_lens. A sum change with an unchanged bid fingerprint = device
+        KV corruption; an unchanged sum across a glitched step = compute/
+        read-path disturbance."""
+        import hashlib as _hl
+        import json as _json
+
+        self._sc_n = getattr(self, "_sc_n", 0) + 1
+        n = self._sc_n
+        if n > self._SC_CAP:
+            return
+        out = os.environ["VLLM_KV_STABLECHECK"]
+        if not hasattr(self, "_sc_inst"):
+            cls = type(self)
+            cls._sc_registry = getattr(cls, "_sc_registry", {})
+            self._sc_inst = cls._sc_registry.setdefault(id(self), len(cls._sc_registry))
+        if not hasattr(self, "_sc_buf"):
+            self._sc_buf = torch.zeros(
+                self._SC_CAP, 2, 2, dtype=torch.int64, device=kv_cache.device
+            )
+            self._sc_dumped = 0
+
+        raw = kv_cache.view(torch.uint8)
+        for r in range(min(block_table.shape[0], 2)):
+            uw = int((block_table[r] > 0).count_nonzero())
+            stable = uw - 2  # keep the 2 frontier blocks out
+            if stable <= 0:
+                continue
+            bids = block_table[r, :stable].to(torch.long)
+            s = raw.index_select(0, bids).sum(dtype=torch.int64)
+            self._sc_buf[n - 1, r, 0].copy_(s, non_blocking=True)
+            self._sc_buf[n - 1, r, 1].fill_(stable)
+
+        if n % self._SC_DUMP_EVERY == 0:
+            rows = self._sc_buf[self._sc_dumped : n].cpu().tolist()
+            fp, sl = [], []
+            for r in range(min(block_table.shape[0], 2)):
+                uw = int((block_table[r] > 0).count_nonzero())
+                stable = max(uw - 2, 0)
+                fp.append(_hl.md5(
+                    block_table[r, :stable].cpu().numpy().tobytes()
+                ).hexdigest()[:10])
+                if seq_lens is not None:
+                    sl.append(int(seq_lens[r]))
+            path = f"{out}/stable_{os.getpid()}.jsonl"
+            os.makedirs(out, exist_ok=True)
+            with open(path, "a") as f:
+                f.write(_json.dumps({
+                    "inst": self._sc_inst,
+                    "n0": self._sc_dumped + 1,
+                    "n1": n,
+                    "sums": rows,
+                    "fp": fp,
+                    "sl": sl,
+                }) + "\n")
+            self._sc_dumped = n
+
+    def _kv_readback_check_g8(self, key, value, slot_mapping):
+        """Write-then-read-back audit for the grouped-int8 (g8/g128) writer:
+        reference-quantize the incoming K/V with the kernel's exact math
+        (per-head per-group absmax, fp16 scale, round-half-away), stash it,
+        and compare after the kernel runs — catches missed writes, stale
+        slots, and data/scale divergence separately."""
+        import torch as _t
+        sm = slot_mapping
+        valid = sm >= 0
+        if not valid.any():
+            self._rb_g8_pending = None
+            return
+        G = self._block_g or 8
+        n, nkv, hs = key.shape
+        hs_v = value.shape[2]
+
+        def quant_ref(x):
+            xg = x.float().view(x.shape[0], x.shape[1], x.shape[2] // G, G)
+            amax = _t.maximum(xg.abs().amax(dim=-1) / 127.0,
+                              _t.full((), 1e-6, device=x.device))
+            s16 = amax.to(_t.float16).to(_t.float32)
+            q = xg / s16.unsqueeze(-1)
+            q = _t.where(q >= 0, q + 0.5, q - 0.5)
+            q = _t.clamp(q, -128.0, 127.0).to(_t.int8)
+            return q, s16.to(_t.float16)
+
+        kc = self._k_data_cache
+        vc = self._v_data_cache
+        ks = self._g8_k
+        vs = self._g8_v
+        bs = kc.shape[1]
+        keep = valid.nonzero(as_tuple=True)[0]
+        slots = sm[keep]
+        rows = (slots // bs).long()
+        cols = (slots % bs).long()
+        kq, ksc = quant_ref(key[keep])
+        vq, vsc = quant_ref(value[keep])
+        # Pre-write snapshots for the stale detector (head 0 data + scales).
+        pre_k = kc[rows, cols, 0, :].clone()
+        pre_ks = ks[rows, cols, 0, :].clone()
+        self._rb_g8_counter = getattr(self, "_rb_g8_counter", 0) + 1
+        if self._rb_g8_counter % 200 == 1:
+            logger.warning("KV-READBACK(g8) active (call %d, layer %s)",
+                           self._rb_g8_counter,
+                           getattr(self, "_rb_layer", "?"))
+        self._rb_g8_pending = (
+            rows, cols, kq, ksc, vq, vsc, slots, pre_k, pre_ks, kc, vc,
+            ks, vs, G,
+        )
+
+    def _kv_readback_finalize_g8(self):
+        import torch as _t
+        p = self._rb_g8_pending
+        if p is None:
+            return
+        (rows, cols, kq, ksc, vq, vsc, slots, pre_k, pre_ks, kc, vc,
+         ks, vs, G) = p
+        self._rb_g8_pending = None
+        ng = kq.shape[2]
+        got_k = kc[rows, cols, 0, :].view(-1, ng, G)
+        got_ks = ks[rows, cols, 0, :]
+        ref_k = kq[:, 0]
+        ref_ks = ksc[:, 0]
+        diff = (got_k.int() - ref_k.int()).abs()
+        mism = (diff > 1).any(dim=-1)
+        sdiff = (got_ks.float() - ref_ks.float()).abs()
+        smism = sdiff > 0.02 * ref_ks.float().clamp(min=1e-8)
+        n_mism = int((mism | smism).sum())
+        if n_mism:
+            stale = 0
+            for j in range(min(n_mism, 8)):
+                idx = (mism | smism).nonzero()[j]
+                if (got_k[idx[0]] == pre_k[idx[0]].view(ng, G).int()).all():
+                    stale += 1
+            logger.warning(
+                "KVREADBACK(g8) MISMATCH layer=%s mismatches=%d/%d "
+                "data_only=%d scale_only=%d stale_pre=%d slots=%s",
+                getattr(self, "_rb_layer", "?"), n_mism, slots.numel(),
+                int(mism.sum()), int(smism.sum()), stale,
+                slots[mism | smism][:6].tolist())
+
+    def do_kv_cache_update(
+        self,
+        layer: AttentionLayer,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        slot_mapping: torch.Tensor,
+    ):
+        if self.attn_type in (AttentionType.ENCODER_ONLY, AttentionType.ENCODER):
+            # For encoder attention,
+            # we use direct Q, K, V tensors without caching
+            return
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
+
+        # int8_block_g* and the VLLM_KV_G8 env diagnostic both take the
+        # grouped-f16-scale triton writer (and skip the C++ fallback below,
+        # which only knows auto/fp8).
+        if self._is_int8_block or getattr(self, "_g8_k", None) is not None:
+            self._ensure_scale_caches(kv_cache)
+            import os as _os8
+            if (
+                _os8.environ.get("VLLM_KV_READBACK")
+                and not torch.cuda.is_current_stream_capturing()
+            ):
+                try:
+                    self._kv_readback_check_g8(key, value, slot_mapping)
+                except Exception as e:
+                    logger.warning("KV-READBACK(g8) check failed: %s", e)
+            from vllm.v1.attention.ops.triton_reshape_and_cache_flash import (
+                reshape_and_cache_g8,
+            )
+
+            reshape_and_cache_g8(
+                key,
+                value,
+                self._k_data_cache,
+                self._v_data_cache,
+                self._g8_k,
+                self._g8_v,
+                slot_mapping,
+                group=self._block_g or 8,
+            )
+            if getattr(self, "_rb_g8_pending", None) is not None:
+                self._kv_readback_finalize_g8()
+            return
+
+        if self._is_per_token_head_quant:
+            self._ensure_scale_caches(kv_cache)
+            # Pass the padded halves: the kernel writes head_size data
+            # elements plus the inline scale at offset head_size within
+            # each half (mirrors TritonAttentionBackend).
+            import os as _os
+            if _os.environ.get("VLLM_KV_READBACK") and not torch.cuda.is_current_stream_capturing():
+                # Write-then-read-back audit: quantize the incoming K/V with
+                # a torch reference, run the real kernel, then re-read the
+                # written slots and compare. Any mismatch is direct evidence
+                # the cache holds different bytes than the kernel was given
+                # (the temp-1.0 garble's last unobserved surface).
+                try:
+                    self._kv_readback_check(
+                        key, value, key_cache, value_cache, slot_mapping
+                    )
+                except Exception as e:
+                    logger.warning("KV-READBACK check failed: %s", e)
+            from vllm import quant_audit_recorder as _qa
+
+            if _qa._enabled() and not torch.cuda.is_current_stream_capturing():
+                _qa.record_kv(
+                    getattr(layer, "layer_name", "kv"),
+                    key[:64].float(),
+                    value[:64].float(),
+                    None,
+                    None,
+                    self._k_scale_cache,
+                    self._v_scale_cache,
+                )
+            triton_reshape_and_cache_flash_per_token_head_quant(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                self._k_scale_cache,
+                self._v_scale_cache,
+                slot_mapping,
+                kv_quant_mode=self._kv_quant_mode,
+            )
+            if getattr(self, "_rb_pending", None) is not None:
+                self._kv_readback_finalize()
+            return
+
+        # Reshape the input keys and values and store them in the cache.
+        ops.reshape_and_cache_flash(
+            key,
+            value,
+            key_cache,
+            value_cache,
+            slot_mapping,
+            self.kv_cache_dtype,
+            layer._k_scale,
+            layer._v_scale,
+        )
+
+    def fused_rope_kvcache_supported(self):
+        if self._is_per_token_head_quant or self._is_int8_block:
+            return False
+        return rocm_aiter_ops.is_enabled()
+
+    def fused_qk_norm_rope_kvcache_supported(self):
+        if self._is_per_token_head_quant or self._is_int8_block:
+            # The fused op writes unquantized fp16 K into the cache.
+            return False
+        return rocm_aiter_ops.is_enabled()
+
+    def do_qk_norm_rope_kvcache_update(
+        self,
+        layer: AttentionLayer,
+        qkv: torch.Tensor,
+        q_out: torch.Tensor,
+        k_out: torch.Tensor,
+        positions: torch.Tensor,
+        q_weight: torch.Tensor,
+        k_weight: torch.Tensor,
+        rms_norm_eps: float,
+        cos_sin_cache: torch.Tensor,
+        is_neox: bool,
+        kv_cache: torch.Tensor,
+        layer_slot_mapping: torch.Tensor,
+    ):
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
+        rocm_aiter_ops.do_qk_norm_rope_kvcache_update(
+            qkv=qkv,
+            q_weight=q_weight,
+            k_weight=k_weight,
+            cos_sin_cache=cos_sin_cache,
+            positions=positions,
+            num_heads_q=self.num_heads,
+            num_heads_k=self.num_kv_heads,
+            head_dim=self.head_size,
+            is_neox=is_neox,
+            rms_norm_eps=rms_norm_eps,
+            q_out=q_out,
+            k_out=k_out,
+            key_cache=key_cache,
+            value_cache=value_cache,
+            slot_mapping=layer_slot_mapping,
+            k_scale=layer._k_scale_cpu,
+            v_scale=layer._v_scale_cpu,
+            kv_cache_dtype=self.kv_cache_dtype,
+            use_shuffle_layout=False,
+        )
+
+    def do_rope_and_kv_cache_update(
+        self,
+        layer: AttentionLayer,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        positions: torch.Tensor,
+        cos_sin_cache: torch.Tensor,
+        is_neox: bool,
+        kv_cache: torch.Tensor,
+        layer_slot_mapping: torch.Tensor,
+    ):
+        if self.attn_type in (AttentionType.ENCODER_ONLY, AttentionType.ENCODER):
+            # For encoder attention,
+            # we use direct Q, K, V tensors without caching
+            return
+        key_cache, value_cache = self._split_kv_cache(kv_cache)
+        flash_layout = True
+
+        is_fp8_kv_cache = is_quantized_kv_cache(self.kv_cache_dtype)
+        if is_fp8_kv_cache:
+            key_cache = key_cache.view(self.fp8_dtype)
+            value_cache = value_cache.view(self.fp8_dtype)
+
+        rocm_aiter_ops.triton_rope_and_cache(
+            query,
+            key,
+            value,
+            positions,
+            cos_sin_cache,
+            is_neox,
+            key_cache,
+            value_cache,
+            layer_slot_mapping,
+            layer._k_scale,
+            layer._v_scale,
+            flash_layout,
+            is_fp8_kv_cache,
+        )

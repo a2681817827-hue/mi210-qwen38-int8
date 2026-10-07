@@ -1,0 +1,5 @@
+This project records MI210 experiments on curvedinf/int8-vllm (Apache-2.0).
+Device-node isolation is adapted from davetha/mi210-vllm (Apache-2.0).
+Attention source snapshots preserve their original Apache-2.0 SPDX notices.
+AITER/CDNA2 methodology and kernel provenance are identified in sources.json.
+AMD lazy-rescale code is currently an unintegrated experiment and is not distributed here.

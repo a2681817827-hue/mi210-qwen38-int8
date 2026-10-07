@@ -1,0 +1,6 @@
+logs/
+.env
+*.safetensors
+*.pt
+__pycache__/
+.venv/

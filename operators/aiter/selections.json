@@ -1,0 +1,374 @@
+{
+  "arch": "gfx90a",
+  "cu_num": 104,
+  "timing": "graph",
+  "rows": [
+    1,
+    14
+  ],
+  "scale_dtype": "float32",
+  "aiter_source_sha256": {
+    "csrc/ck_gemm_a8w8/gemm_a8w8_common.py": "f298a500e6c30383d38fb93c7c8a0fcaf63e46e27e429499d2542082409eb239",
+    "csrc/ck_gemm_a8w8/gen_instances.py": "ac7b0639d8f7fcfed1b069b8e8ab28a21f79cb56e10d7d8b350f55441fb13f41",
+    "csrc/ck_gemm_a8w8/gemm_a8w8_tune.cu": "47a52fe8d7a1875e28e0b7a3728f29ac3fef24b440018cfc60012fc441a2bb2f",
+    "aiter/ops/gemm_op_a8w8.py": "6fce327afeeac3d886b5f58a92b1d276f8ddcd77f7ddb194e5c3700c9d3ac101"
+  },
+  "kernel_names": {
+    "31": "a8w8_rowwise_256x16x256x128_16x16_1x4_16x16x1_8x32x1_1x16x1x16_8x8x1_1x2_intrawave_v3",
+    "33": "a8w8_rowwise_256x16x128x256_16x16_1x2_16x16x1_16x16x1_1x16x1x16_8x8x1_1x2_intrawave_v3",
+    "34": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+    "49": "a8w8_rowwise_64x16x16x128_16x16_1x1_8x8x1_8x8x1_1x16x1x4_4x4x1_1x1_intrawave_v1",
+    "50": "a8w8_rowwise_128x16x32x128_16x16_1x1_8x16x1_8x16x1_1x16x1x8_4x4x1_1x1_intrawave_v1",
+    "59": "a8w8_rowwise_64x16x16x128_16x16_1x1_8x8x1_8x8x1_1x16x1x4_4x4x1_1x1_intrawave_v2",
+    "61": "a8w8_rowwise_128x16x64x128_16x16_1x2_8x16x1_8x16x1_1x16x1x8_4x4x1_1x1_intrawave_v2",
+    "63": "a8w8_rowwise_128x16x128x128_16x16_1x4_8x16x1_8x16x1_1x16x1x8_4x4x1_1x1_interwave_v2",
+    "65": "a8w8_rowwise_256x16x256x128_16x16_1x4_8x16x1_8x16x1_1x16x1x16_4x4x1_1x1_interwave_v2",
+    "68": "a8w8_rowwise_64x16x16x128_16x16_1x1_8x8x1_8x8x1_1x16x1x4_4x4x1_1x1_interwave_v1",
+    "79": "a8w8_rowwise_128x16x32x128_16x16_1x1_8x16x1_8x16x1_1x16x1x8_4x4x1_1x1_interwave_v2",
+    "80": "a8w8_rowwise_128x16x64x128_16x16_1x2_8x16x1_8x16x1_1x16x1x8_4x4x1_1x1_interwave_v2",
+    "82": "a8w8_rowwise_128x16x128x128_16x16_1x4_8x16x1_8x16x1_1x16x1x8_4x4x1_1x1_interwave_v2",
+    "84": "a8w8_rowwise_256x16x256x128_16x16_1x4_8x16x1_8x16x1_1x16x1x16_4x4x1_1x1_interwave_v2"
+  },
+  "output_dtype": "bfloat16",
+  "serving_validated": false,
+  "status": "OPERATOR_GATES_COMPLETE",
+  "dispatch_note": "selections.json is a tuning report; the current CK serving wrapper does not consume its kernel_id. Do not claim a serving speedup from this file.",
+  "selections": [
+    {
+      "M": 1,
+      "N": 16384,
+      "K": 5120,
+      "baseline_ms": 0.08150420188903809,
+      "baseline_raw_ms": [
+        0.08243240118026733,
+        0.08108839988708497,
+        0.08230440020561218,
+        0.08150420188903809,
+        0.08128020167350769
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.08150420188903809,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    },
+    {
+      "M": 1,
+      "N": 34816,
+      "K": 5120,
+      "baseline_ms": 0.14742480516433715,
+      "baseline_raw_ms": [
+        0.15302480459213258,
+        0.15388879776000977,
+        0.14742480516433715,
+        0.1398408055305481,
+        0.1377925992012024
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.14742480516433715,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    },
+    {
+      "M": 1,
+      "N": 5120,
+      "K": 17408,
+      "baseline_ms": 0.0858244001865387,
+      "baseline_raw_ms": [
+        0.08784040212631225,
+        0.08524860143661499,
+        0.08547239899635314,
+        0.086080402135849,
+        0.0858244001865387
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.07654439806938171,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.07692840099334716,
+        0.07609639763832092,
+        0.07654439806938171,
+        0.07590439915657043,
+        0.07734439969062805
+      ],
+      "speedup": 1.1212368553574015
+    },
+    {
+      "M": 1,
+      "N": 5120,
+      "K": 6144,
+      "baseline_ms": 0.03795219957828522,
+      "baseline_raw_ms": [
+        0.0388482004404068,
+        0.037344199419021604,
+        0.03849599957466125,
+        0.03795219957828522,
+        0.03763220012187958
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.03795219957828522,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    },
+    {
+      "M": 1,
+      "N": 5120,
+      "K": 8192,
+      "baseline_ms": 0.045632201433181765,
+      "baseline_raw_ms": [
+        0.04694420099258423,
+        0.045408201217651364,
+        0.045632201433181765,
+        0.045056399703025815,
+        0.045760199427604675
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.04208019971847534,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.042368000745773314,
+        0.041600200533866885,
+        0.041888201236724855,
+        0.04208019971847534,
+        0.04211220145225525
+      ],
+      "speedup": 1.0844102865117087
+    },
+    {
+      "M": 1,
+      "N": 14336,
+      "K": 5120,
+      "baseline_ms": 0.08483240008354187,
+      "baseline_raw_ms": [
+        0.08496059775352478,
+        0.08377640247344971,
+        0.08483240008354187,
+        0.08406440019607545,
+        0.08547260165214539
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.07881640195846558,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.07875239849090576,
+        0.07881640195846558,
+        0.07881640195846558,
+        0.07948840260505677,
+        0.07964839935302734
+      ],
+      "speedup": 1.0763292661881037
+    },
+    {
+      "M": 1,
+      "N": 248320,
+      "K": 5120,
+      "baseline_ms": 0.9379887580871582,
+      "baseline_raw_ms": [
+        0.9630448341369628,
+        0.9341168403625488,
+        0.9381487846374512,
+        0.9379887580871582,
+        0.9348848342895508
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.9379887580871582,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    },
+    {
+      "M": 14,
+      "N": 16384,
+      "K": 5120,
+      "baseline_ms": 0.0924805998802185,
+      "baseline_raw_ms": [
+        0.0924805998802185,
+        0.09344040155410767,
+        0.09289640188217163,
+        0.09174439907073975,
+        0.09184039831161499
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.0924805998802185,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    },
+    {
+      "M": 14,
+      "N": 34816,
+      "K": 5120,
+      "baseline_ms": 0.15744080543518066,
+      "baseline_raw_ms": [
+        0.1702728033065796,
+        0.17129679918289184,
+        0.15744080543518066,
+        0.15068860054016114,
+        0.15052880048751832
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.15744080543518066,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    },
+    {
+      "M": 14,
+      "N": 5120,
+      "K": 17408,
+      "baseline_ms": 0.0903685986995697,
+      "baseline_raw_ms": [
+        0.09081659913063049,
+        0.08963239789009095,
+        0.0903685986995697,
+        0.08992040157318115,
+        0.09043239951133727
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.08336039781570434,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.08355240225791931,
+        0.0830403983592987,
+        0.08268839716911316,
+        0.08444839715957642,
+        0.08336039781570434
+      ],
+      "speedup": 1.0840711065146222
+    },
+    {
+      "M": 14,
+      "N": 5120,
+      "K": 6144,
+      "baseline_ms": 0.03916819989681244,
+      "baseline_raw_ms": [
+        0.0399042010307312,
+        0.039040198922157286,
+        0.03916819989681244,
+        0.038784199953079225,
+        0.03948819935321808
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.03660820126533508,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.036896198987960815,
+        0.03603219985961914,
+        0.036544200778007505,
+        0.03660820126533508,
+        0.03696019947528839
+      ],
+      "speedup": 1.0699296480841156
+    },
+    {
+      "M": 14,
+      "N": 5120,
+      "K": 8192,
+      "baseline_ms": 0.05004839897155762,
+      "baseline_raw_ms": [
+        0.050592201948165896,
+        0.05004839897155762,
+        0.05004820227622986,
+        0.05008019804954529,
+        0.04883239865303039
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.044640401005744935,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.044640401005744935,
+        0.04515219926834106,
+        0.04460819959640503,
+        0.04499219954013824,
+        0.044128400087356565
+      ],
+      "speedup": 1.121145819570857
+    },
+    {
+      "M": 14,
+      "N": 14336,
+      "K": 5120,
+      "baseline_ms": 0.086080402135849,
+      "baseline_raw_ms": [
+        0.08620839715003967,
+        0.08614439964294433,
+        0.08544059991836547,
+        0.086080402135849,
+        0.08313639760017395
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 0.07657639980316162,
+      "kernel_id": 34,
+      "splitK": 0,
+      "kernel_name": "a8w8_rowwise_256x16x64x512_16x16_1x1_32x8x1_32x8x1_1x16x1x16_4x4x1_1x1_intrawave_v3",
+      "raw_ms": [
+        0.07635239958763122,
+        0.07705640196800231,
+        0.07654439806938171,
+        0.07680040001869201,
+        0.07657639980316162
+      ],
+      "speedup": 1.124111375790939
+    },
+    {
+      "M": 14,
+      "N": 248320,
+      "K": 5120,
+      "baseline_ms": 1.0493494033813477,
+      "baseline_raw_ms": [
+        1.066309356689453,
+        1.0480691909790039,
+        1.0493494033813477,
+        1.0479731559753418,
+        1.050629234313965
+      ],
+      "timing": "graph",
+      "baseline_numeric": "PASS",
+      "graph_replay": "PASS",
+      "selected_ms": 1.0493494033813477,
+      "kernel_id": null,
+      "splitK": 0,
+      "speedup": 1.0
+    }
+  ]
+}
