@@ -28,10 +28,14 @@ def extra_arm_settings(recipes, control, existing):
         'SPEC_TOKENS': {str(n) for n in range(1, 33)},
         'MI210_QUERY_TILE': {'5', '10', '16'},
         'MI210_KV_TILE': {'32', '64'},
+        'MI210_DRAFT_SPLITS': {'8', '16', '32', '64'},
         'MI210_FLASH_SPLITS': {'8', '16', '32', '64'},
         **{name: {'0', '1'} for name in (
             'MI210_INT8_LM_HEAD', 'MI210_TUNED_CK', 'MI210_GDN_TINY_BA',
-            'MI210_GDN_ZVIEW', 'MI210_NATIVE_GDN', 'MI210_INT8_QK')},
+            'MI210_GDN_ZVIEW', 'MI210_NATIVE_GDN', 'MI210_INT8_QK',
+            'MI210_TARGET_WAVE_LAYOUT', 'MI210_DRAFT_GLUON',
+            'MI210_REGISTER_QUANT_ALIAS', 'MI210_EXTENDED_CK',
+            'MI210_QKPV_INTERLEAVE', 'MI210_REDUCTION_POLICY')},
         'MI210_NATIVE_GDN_RAW': {'0', '1'},
     }
     result = {}
@@ -163,7 +167,7 @@ def main():
         report['arm_config_sha256'] = hashlib.sha256(args.arm_config.read_bytes()).hexdigest()
     report_path = args.output_dir / "campaign.json"
     reference = args.reference_quality
-    key = os.environ.get("MI210_API_KEY", "mi210-local-api")
+    key = os.environ.get("MI210_API_KEY", "<SET_YOUR_API_KEY>")
 
     def save():
         report_path.write_text(json.dumps(report, indent=2) + "\n")
@@ -186,7 +190,10 @@ def main():
         env = dict(os.environ)
         for variable in ("SPEC_TOKENS", "SPEC_METHOD", "PREFIX_CACHING", "MI210_TUNED_CK", "MI210_QUERY_TILE", "MI210_KV_TILE", "MI210_FLASH_SPLITS",
                          "MI210_INT8_LM_HEAD", "MI210_PROFILE", "MI210_GDN_TINY_BA", "MI210_GDN_ZVIEW",
-                         "MI210_NATIVE_GDN", "MI210_NATIVE_GDN_RAW", "MI210_INT8_QK"):
+                         "MI210_NATIVE_GDN", "MI210_NATIVE_GDN_RAW", "MI210_INT8_QK", "MI210_TARGET_WAVE_LAYOUT",
+                         "MI210_DRAFT_GLUON", "MI210_DRAFT_SPLITS",
+                         "MI210_REGISTER_QUANT_ALIAS", "MI210_EXTENDED_CK",
+                         "MI210_QKPV_INTERLEAVE", "MI210_REDUCTION_POLICY"):
             env.pop(variable, None)
         env.update(settings[label], MI210_IMAGE=image_id, MI210_NAME=name,
                    MI210_HOST="127.0.0.1", PORT="8080", MI210_API_KEY=key,

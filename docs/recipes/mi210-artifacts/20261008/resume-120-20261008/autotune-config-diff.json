@@ -1,0 +1,245 @@
+[
+  {
+    "cache_file": "wu/fbeb446a62e108b6fbca0007fe173cdcfcbe39a5ea3292f6d7151c98699a5983.best_config",
+    "kernel_names": [
+      "Placeholder.DESCRIPTIVE_NAME"
+    ],
+    "old": {
+      "XBLOCK": 2,
+      "R0_BLOCK": 256,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "813e86d1021a5408ecc4180745e317a4134babe44f71cd4449afc5ca7c946f9b",
+      "found_by_coordesc": false,
+      "time_taken_ms": 722,
+      "triton_cache_hash": "NL6BNDNR7P4JXUMHOVLMXSY2GQIVV33NPDILUJSXXZFALKBMBPMQ"
+    },
+    "new": {
+      "XBLOCK": 8,
+      "R0_BLOCK": 256,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "813e86d1021a5408ecc4180745e317a4134babe44f71cd4449afc5ca7c946f9b",
+      "found_by_coordesc": false,
+      "time_taken_ms": 721,
+      "triton_cache_hash": "ZGMODIJB5E6JJW3SPY2WFRL7N4755MXAOHU6QXVYGPEWCEDQSPWA"
+    }
+  },
+  {
+    "cache_file": "s2/d9379e15986752e42ca4b8af4055eca8311bcb42a7ed7d851f6eb8a42bb2ae5f.best_config",
+    "kernel_names": [
+      "Placeholder.DESCRIPTIVE_NAME"
+    ],
+    "old": {
+      "XBLOCK": 2048,
+      "waves_per_eu": 1,
+      "num_warps": 8,
+      "num_stages": 2,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 201,
+      "triton_cache_hash": "DPVDNEBDRZOJQM6PEQBRC5P7DLS7GY4OIIPVFKXIEQCUAYNKBNQQ"
+    },
+    "new": {
+      "XBLOCK": 8192,
+      "waves_per_eu": 2,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 198,
+      "triton_cache_hash": "LQ3HK7BBCWYAP3Y7MCBEMGF3KUV6OXROBMV4VSS4WQ7HR353GG3Q"
+    }
+  },
+  {
+    "cache_file": "mc/512cd7a4e67c6cde4376d0313c58cb4602e71789ea5686700221bebdb6f0d074.best_config",
+    "kernel_names": [
+      "triton_poi_fused_zeros_4"
+    ],
+    "old": {
+      "XBLOCK": 2048,
+      "waves_per_eu": 1,
+      "num_warps": 8,
+      "num_stages": 2,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 43,
+      "triton_cache_hash": "PWJ46XXIWTM4HH2QN3L52TI7Q6X7NB5ZODQZE65IGMRMTTOWLNRQ"
+    },
+    "new": {
+      "XBLOCK": 1024,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 42,
+      "triton_cache_hash": "HOTQ2YUA7G2YBL364WVVL6WL676MGA6B5A7MU572OCCHNJJFYYMQ"
+    }
+  },
+  {
+    "cache_file": "rc/01f08682799401faf8d4b152b29773cef9e80ac20a4d89ee1252f66365fe9019.best_config",
+    "kernel_names": [
+      "triton_poi_fused__to_copy_add_cat_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_6"
+    ],
+    "old": {
+      "XBLOCK": 8192,
+      "waves_per_eu": 2,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 53,
+      "triton_cache_hash": "D2CATPGWFZNDEEUVLCEFVI2HCPRDJNETADMJ2WISNLKLW7NZAPQA"
+    },
+    "new": {
+      "XBLOCK": 1024,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 53,
+      "triton_cache_hash": "P7SC3LCS4XV3NXV3SS4FAUAKVTL5MX3PS7RIP7H2WBYBBT5U2HTQ"
+    }
+  },
+  {
+    "cache_file": "cn/3be5971b82982e5c96643466f085c8dbdb352c49b7d6238d8345ab5e3b04c378.best_config",
+    "kernel_names": [
+      "triton_poi_fused_arange_bitwise_and_eq_index_lt_remainder_select_split_where_5"
+    ],
+    "old": {
+      "XBLOCK": 2048,
+      "waves_per_eu": 1,
+      "num_warps": 8,
+      "num_stages": 2,
+      "configs_hash": "8109593b173209d678c3f15fa84235b59f1879d682639796d8cfd84e0afb0f16",
+      "found_by_coordesc": false,
+      "time_taken_ms": 41,
+      "triton_cache_hash": "GTWPCTVCVEYBOPB7QRA5GDRCZNSHH5L4TUL5QSNZTENKUTHSCJPA"
+    },
+    "new": {
+      "XBLOCK": 256,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "8109593b173209d678c3f15fa84235b59f1879d682639796d8cfd84e0afb0f16",
+      "found_by_coordesc": false,
+      "time_taken_ms": 41,
+      "triton_cache_hash": "YTSVOK2SOB6L7A5MSDOEHKDEOIM4COZSDRZO5IR33RP3KRJLVYYQ"
+    }
+  },
+  {
+    "cache_file": "ss/ba68514146f22453e6e024dff3ee1b1549c918407288789c7c1722aa8e48ce16.best_config",
+    "kernel_names": [
+      "triton_red_fused__to_copy_add_fused_add_rms_norm_3"
+    ],
+    "old": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 2048,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "65f472f7864f7f56fdfdaef5a33756f7863b14f713e4161aaf36d6568e61935a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 43,
+      "triton_cache_hash": "5LEGTGWPKYXRX3XF3YZKIAX5JLWUI25CEUHHZACAWQGLNNLMG3PA"
+    },
+    "new": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "65f472f7864f7f56fdfdaef5a33756f7863b14f713e4161aaf36d6568e61935a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 41,
+      "triton_cache_hash": "YCQPVQVQ2HLFUACFFGDQAUSLZACTW3QVAHYRKH5QWWZNEBAQGIVQ"
+    }
+  },
+  {
+    "cache_file": "6k/cd15b387856d0a0b8d9d31ad636541fb0aae934057a826bea7d1ac9d279838c3.best_config",
+    "kernel_names": [
+      "_pertoken_quant_rn_kernel_0",
+      "_pertoken_quant_rn_kernel_1",
+      "_pertoken_quant_rn_kernel_2",
+      "triton_poi_fused_3",
+      "triton_poi_fused__to_copy_add_cat_clone_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_8",
+      "triton_poi_fused__to_copy_add_cat_clone_rms_norm_slice_split_split_with_sizes_view_9",
+      "triton_poi_fused__to_copy_add_cat_mul_rms_norm_slice_split_split_with_sizes_sub_unsqueeze_view_6",
+      "triton_poi_fused__to_copy_add_cat_rms_norm_slice_split_with_sizes_view_7",
+      "triton_poi_fused_arange_bitwise_and_eq_index_lt_remainder_select_split_where_5",
+      "triton_poi_fused_mul_silu_slice_1",
+      "triton_red_fused_4",
+      "triton_red_fused__to_copy_add_fused_add_rms_norm_0",
+      "triton_red_fused__to_copy_add_fused_add_rms_norm_2",
+      "triton_red_fused__to_copy_add_fused_add_rms_norm_3"
+    ],
+    "old": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 2048,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "65f472f7864f7f56fdfdaef5a33756f7863b14f713e4161aaf36d6568e61935a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 39,
+      "triton_cache_hash": "UXNJWMC24XEWMLXBLQQWQINYDIQGQUXEZJ5VMZJV5ZJMDGGBCF7Q"
+    },
+    "new": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "65f472f7864f7f56fdfdaef5a33756f7863b14f713e4161aaf36d6568e61935a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 39,
+      "triton_cache_hash": "PJC6PBM7WOP2J4Y7LDRHCKASVWPQDWNC2A6MTLBKXXYO32YLO4TQ"
+    }
+  },
+  {
+    "cache_file": "4d/ace717cf096508aab82121afdecf0b85bb7a6a2f28697d6eeb946b6888d4a7b3.best_config",
+    "kernel_names": [
+      "Placeholder.DESCRIPTIVE_NAME"
+    ],
+    "old": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 2048,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "65f472f7864f7f56fdfdaef5a33756f7863b14f713e4161aaf36d6568e61935a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 235,
+      "triton_cache_hash": "LPSSOLSAJ6VE7SRF5BQ3Q67X4IODVH4WIPMN5J3W7MHCFFH5BOCA"
+    },
+    "new": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1,
+      "configs_hash": "65f472f7864f7f56fdfdaef5a33756f7863b14f713e4161aaf36d6568e61935a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 240,
+      "triton_cache_hash": "UGNDMNPEY4N5SVHWXPEJS4N577CEBZCMX5VA7CVOUVPNLXBSRB6A"
+    }
+  },
+  {
+    "cache_file": "qv/5106af62018719aaf750ffbb8576c3967487a262fd4d1b0ad288b79c2ea9fa5d.best_config",
+    "kernel_names": [
+      "triton_poi_fused_zeros_3"
+    ],
+    "old": {
+      "XBLOCK": 4096,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 42,
+      "triton_cache_hash": "2EGBMWTQVF26G3MJR42Y5E4GJ636ITJ3WY4SZCXG5W45LV3S753A"
+    },
+    "new": {
+      "XBLOCK": 8192,
+      "waves_per_eu": 2,
+      "num_warps": 4,
+      "num_stages": 1,
+      "configs_hash": "dfd6fc89404970546606d7983176fe0bf89beae1559f720faa6bcea058a4928a",
+      "found_by_coordesc": false,
+      "time_taken_ms": 41,
+      "triton_cache_hash": "5PLGWXQQOJPVB5JALUZGLP2BSAMTMJID2ROZ3HLLL3OSTTR5I6CA"
+    }
+  }
+]

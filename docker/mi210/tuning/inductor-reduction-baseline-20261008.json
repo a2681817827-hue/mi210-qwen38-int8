@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "status": "EXPERIMENTAL_MODEL_VALIDATION_PENDING",
+  "source": "Measured control-before AOT selected reduction parameters; no binary cache reuse",
+  "table": {
+    "[\"triton_red_fused__to_copy_add_rms_norm_0\",{\"r0_\":8192,\"x\":2048},\"3950b6d277f7720df33df1010c89e4a4366d4f91ff0976d0ad12a12210611640\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_0\",{\"r0_\":8192,\"x\":2048},\"d7165f59d2dc7cf203986a2ad5108bcaac952949f7b8d3d32176a2a9a04b3efe\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_2\",{\"r0_\":8192,\"x\":2048},\"8561c138f367e8c73fc631ed66ff0dc9f8d63fa4b444618da0a08a83fc6d4db2\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_2\",{\"r0_\":8192,\"x\":2048},\"f7d0d6e8923c49ba9f82131c5b12f0c3f0f07ec1f7d0d51155c3833b084e1e67\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_3\",{\"r0_\":8192,\"x\":2048},\"665bfa8976f0a202738739c3413860cc11258eae49f65c99089fb88498b23380\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 2048,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_3\",{\"r0_\":8192,\"x\":2048},\"f7d0d6e8923c49ba9f82131c5b12f0c3f0f07ec1f7d0d51155c3833b084e1e67\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_3\",{\"r0_\":8192,\"x\":2048},\"8561c138f367e8c73fc631ed66ff0dc9f8d63fa4b444618da0a08a83fc6d4db2\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 2048,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused_4\",{\"r0_\":256,\"x\":65536},\"ea5bd5198bceb305bc9ad02610cce5334b9fd96ceada5b51d815d5f6ca9d5ba7\"]": {
+      "XBLOCK": 8,
+      "R0_BLOCK": 256,
+      "num_warps": 8,
+      "num_stages": 1
+    },
+    "[\"triton_red_fused__to_copy_add_fused_add_rms_norm_1\",{\"r0_\":8192,\"x\":2048},\"d7165f59d2dc7cf203986a2ad5108bcaac952949f7b8d3d32176a2a9a04b3efe\"]": {
+      "XBLOCK": 1,
+      "R0_BLOCK": 8192,
+      "num_warps": 8,
+      "num_stages": 1
+    }
+  },
+  "skipped_benchmark_only_files": [
+    "/data/cache/mi210-vllm/mi210-qkpv-screen-20261008-control-before/torch_compile_cache/torch_aot_compile/0db5b59f057aef77755babed8be49c979f4d5dc40d029daf182d3e6556484241/inductor_cache/wu/fbeb446a62e108b6fbca0007fe173cdcfcbe39a5ea3292f6d7151c98699a5983.best_config",
+    "/data/cache/mi210-vllm/mi210-qkpv-screen-20261008-control-before/torch_compile_cache/torch_aot_compile/0db5b59f057aef77755babed8be49c979f4d5dc40d029daf182d3e6556484241/inductor_cache/g5/d824927e8ab3ca4c53b91086eb29e32d859b1089ee21f4f1250ccd2e684e7f1f.best_config",
+    "/data/cache/mi210-vllm/mi210-qkpv-screen-20261008-control-before/torch_compile_cache/torch_aot_compile/0db5b59f057aef77755babed8be49c979f4d5dc40d029daf182d3e6556484241/inductor_cache/4d/ace717cf096508aab82121afdecf0b85bb7a6a2f28697d6eeb946b6888d4a7b3.best_config",
+    "/data/cache/mi210-vllm/mi210-qkpv-screen-20261008-control-before/torch_compile_cache/torch_aot_compile/0db5b59f057aef77755babed8be49c979f4d5dc40d029daf182d3e6556484241/inductor_cache/ds/8afc33cc0dbbe5229b585b0d76da8133c301725937a519c8c08c1ef09e8c17d2.best_config"
+  ]
+}

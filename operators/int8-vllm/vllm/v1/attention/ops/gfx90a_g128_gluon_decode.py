@@ -43,9 +43,11 @@ def g128_core_cdna2(
     Q_TOKENS: gl.constexpr = 10,
     QK_INT8: gl.constexpr = False,
     NUM_WARPS: gl.constexpr = 4,
+    MMA_WARPS_N: gl.constexpr = 1,
 ):
     gl.static_assert(Q_TOKENS * NQ_PER_KV <= Q_ROWS)
     gl.static_assert(NUM_WARPS == 2 or NUM_WARPS == 4)
+    gl.static_assert(NUM_WARPS % MMA_WARPS_N == 0)
     block_id = gl.program_id(0)
     kv_head = gl.program_id(1)
     seg = gl.program_id(2)
@@ -81,12 +83,12 @@ def g128_core_cdna2(
     if MMA_FP16:
         mma: gl.constexpr = gl.amd.AMDMFMALayout(
             version=2, instr_shape=[16, 16, 16],
-            transposed=True, warps_per_cta=[NUM_WARPS, 1]
+            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
         )
     else:
         mma: gl.constexpr = gl.amd.AMDMFMALayout(
             version=2, instr_shape=[16, 16, 16],
-            transposed=True, warps_per_cta=[NUM_WARPS, 1]
+            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
         )
     out_layout: gl.constexpr = gl.BlockedLayout(
         size_per_thread=[1, 2], threads_per_warp=[16, 4],

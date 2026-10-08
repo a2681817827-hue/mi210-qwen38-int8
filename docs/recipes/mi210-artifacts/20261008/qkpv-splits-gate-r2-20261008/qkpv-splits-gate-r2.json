@@ -1,0 +1,116 @@
+{
+  "rejected_variants": [
+    {
+      "warps": 2,
+      "split": 8,
+      "status": "REJECTED_NUMERIC",
+      "error": "Geometry-only change exceeded relative L2 0.0005: 0.002815415384247899"
+    },
+    {
+      "warps": 2,
+      "split": 16,
+      "status": "REJECTED_NUMERIC",
+      "error": "Geometry-only change exceeded relative L2 0.0005: 0.002648200374096632"
+    },
+    {
+      "warps": 2,
+      "split": 64,
+      "status": "REJECTED_NUMERIC",
+      "error": "Geometry-only change exceeded relative L2 0.0005: 0.0022772375959903"
+    }
+  ],
+  "requested_variants": 5,
+  "actual_candidate_calls": 20,
+  "serving_validated": false,
+  "status": "PASS",
+  "exact_replays": [
+    {
+      "depth": 33,
+      "variant": [
+        2,
+        32
+      ],
+      "output_bit_exact": true,
+      "relative_l2": 0.0
+    },
+    {
+      "depth": 48081,
+      "variant": [
+        2,
+        32
+      ],
+      "output_bit_exact": true,
+      "relative_l2": 0.0
+    },
+    {
+      "depth": 131072,
+      "variant": [
+        2,
+        32
+      ],
+      "output_bit_exact": true,
+      "relative_l2": 0.0
+    },
+    {
+      "depth": 120081,
+      "variant": [
+        2,
+        32
+      ],
+      "output_bit_exact": true,
+      "relative_l2": 0.0
+    }
+  ],
+  "kv_tile": 64,
+  "splits": 32,
+  "query_tile": 5,
+  "source_sha256": "8c2be715584cbc75834b0c5af6452169c0e270c0a0ed3eda1527ac6fdd39bdf3",
+  "resources": {
+    "candidate": {
+      "n_regs": 256,
+      "n_spills": 0
+    }
+  },
+  "input_tokens": 48081,
+  "query_tokens": 14,
+  "client_concurrency": 1,
+  "measurement": "captured attention operator only; not model token/s",
+  "cases": [
+    {
+      "warps": 0,
+      "warp_n": 32,
+      "median_ms": 0.6855931854248047,
+      "raw_ms": [
+        0.6873683166503907,
+        0.6851646423339843,
+        0.686587905883789,
+        0.6844961547851562,
+        0.6855931854248047,
+        0.6865399932861328,
+        0.6833926391601562
+      ],
+      "numeric": "PASS",
+      "graph_replay": "PASS",
+      "relative_l2_to_control": 0.0,
+      "operator_speedup": 1.0
+    },
+    {
+      "warps": 2,
+      "warp_n": 32,
+      "median_ms": 0.4896637725830078,
+      "raw_ms": [
+        0.49284934997558594,
+        0.4907672119140625,
+        0.4896637725830078,
+        0.4881540679931641,
+        0.4895997619628906,
+        0.48920955657958987,
+        0.4917011260986328
+      ],
+      "numeric": "PASS",
+      "graph_replay": "PASS",
+      "relative_l2_to_control": 0.0,
+      "operator_speedup": 1.4001305054859516
+    }
+  ]
+}

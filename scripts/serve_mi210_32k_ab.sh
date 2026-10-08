@@ -32,7 +32,7 @@ case "$arm" in
 esac
 cache_args=()
 experiment_args=()
-for variable in MI210_GDN_TINY_BA MI210_GDN_ZVIEW MI210_NATIVE_GDN MI210_NATIVE_GDN_RAW MI210_INT8_QK; do
+for variable in MI210_GDN_TINY_BA MI210_GDN_ZVIEW MI210_NATIVE_GDN MI210_NATIVE_GDN_RAW MI210_INT8_QK MI210_TARGET_WAVE_LAYOUT MI210_DRAFT_GLUON MI210_REGISTER_QUANT_ALIAS MI210_EXTENDED_CK MI210_QKPV_INTERLEAVE; do
   value=${!variable:-}
   if [[ -n $value ]]; then
     [[ $value =~ ^(0|1)$ ]] || { echo "$variable must be 0 or 1" >&2; exit 2; }
@@ -41,10 +41,25 @@ for variable in MI210_GDN_TINY_BA MI210_GDN_ZVIEW MI210_NATIVE_GDN MI210_NATIVE_
       MI210_GDN_ZVIEW) experiment_args+=(-e "VLLM_GDN_ZVIEW=$value") ;;
       MI210_NATIVE_GDN) experiment_args+=(-e "VLLM_MI210_NATIVE_GDN=$value") ;;
       MI210_NATIVE_GDN_RAW) experiment_args+=(-e "VLLM_MI210_NATIVE_GDN_RAW=$value") ;;
+      MI210_TARGET_WAVE_LAYOUT) experiment_args+=(-e "VLLM_MI210_TARGET_WAVE_LAYOUT=$value") ;;
+      MI210_DRAFT_GLUON) experiment_args+=(-e "VLLM_MI210_DRAFT_GLUON=$value") ;;
+      MI210_REGISTER_QUANT_ALIAS) experiment_args+=(-e "VLLM_MI210_REGISTER_QUANT_ALIAS=$value") ;;
+      MI210_EXTENDED_CK) experiment_args+=(-e "AITER_MI210_EXTENDED_CK=$value") ;;
       MI210_INT8_QK) experiment_args+=(-e "VLLM_MI210_INT8_QK=$value") ;;
+      MI210_QKPV_INTERLEAVE) experiment_args+=(-e "VLLM_MI210_QKPV_INTERLEAVE=$value") ;;
     esac
   fi
 done
+if [[ ${MI210_REDUCTION_POLICY:-0} == 1 ]]; then
+  policy_dir="$(cd "$(dirname "$0")/../docker/mi210" && pwd)"
+  policy_sha=$(sha256sum "$policy_dir/tuning/inductor-reduction-baseline-20261008.json")
+  policy_sha=${policy_sha%% *}
+  experiment_args+=(-e VLLM_MI210_REDUCTION_POLICY=1
+    -e "VLLM_MI210_REDUCTION_POLICY_SHA256=$policy_sha"
+    -e PYTHONPATH=/opt/int8-vllm/docker/mi210/reduction-policy:/opt/int8-vllm:/opt/aiter)
+elif [[ ${MI210_REDUCTION_POLICY:-0} != 0 ]]; then
+  echo 'MI210_REDUCTION_POLICY must be 0 or 1' >&2; exit 2
+fi
 if [[ -n ${MI210_TUNED_CK:-} ]]; then
   [[ $MI210_TUNED_CK =~ ^(0|1)$ ]] || { echo 'MI210_TUNED_CK must be 0 or 1' >&2; exit 2; }
   experiment_args+=(-e "AITER_MI210_TUNED_CK=$MI210_TUNED_CK")
@@ -73,6 +88,10 @@ if [[ -n ${MI210_FLASH_SPLITS:-} ]]; then
     echo 'MI210_FLASH_SPLITS must be 8, 16, 32 or 64' >&2; exit 2;
   }
   experiment_args+=(-e "VLLM_MI210_FLASH_SPLITS=$MI210_FLASH_SPLITS")
+fi
+if [[ -n ${MI210_DRAFT_SPLITS:-} ]]; then
+  [[ $MI210_DRAFT_SPLITS =~ ^(8|16|32|64)$ ]] || { echo 'Invalid MI210_DRAFT_SPLITS' >&2; exit 2; }
+  experiment_args+=(-e "VLLM_MI210_DRAFT_SPLITS=$MI210_DRAFT_SPLITS")
 fi
 if [[ -n ${MI210_KV_TILE:-} ]]; then
   [[ $MI210_KV_TILE =~ ^(32|64)$ ]] || {
@@ -121,7 +140,7 @@ cmd=(docker run -d --name "${MI210_NAME:-int8-vllm-mi210-32k-$arm}"
   --entrypoint vllm "${MI210_IMAGE:-int8-vllm-mi210:32k-vision-baseline}"
   serve /models/Qwen3.8-27B-PTQR-R10S60 --served-model-name qwen-ptqr
   --host "${MI210_HOST:-10.168.1.4}" --port "${PORT:-8080}"
-  --api-key "${MI210_API_KEY:-mi210-local-api}"
+  --api-key "${MI210_API_KEY:-<SET_YOUR_API_KEY>}"
   --tensor-parallel-size 1 --dtype bfloat16 --kv-cache-dtype int8_block_g128
   --mamba-ssm-cache-dtype float32 --max-model-len "$max_model_len" --max-num-seqs "$concurrency"
   --max-num-batched-tokens "$batched_tokens" --gpu-memory-utilization 0.90

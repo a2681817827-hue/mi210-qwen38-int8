@@ -1,0 +1,110 @@
+{
+  "known_private_values_removed": 1,
+  "changed_text_files": [
+    {
+      "path": "logs/mi210/continue-20261005/ck-launch-dry-run.txt",
+      "original_sha256": "804348c6d860ce87661328ea0722b0500b25c478f7042ab839ccc2ebf3fa0a40",
+      "public_sha256": "692f0a8b6b1b82a78ce51ada2f6acfccfe9a05a6aec89935e30312259e0d073e"
+    },
+    {
+      "path": "scripts/serve_mi210_32k_ab.sh",
+      "original_sha256": "aa8baf10f8e53cee559f9510c05053d1ef296727b9de27122c56958265d37596",
+      "public_sha256": "6a0573d5fe5cc5d98fedec1af42025a7d795e2d288f730e2868b7d285177942e"
+    },
+    {
+      "path": "logs/mi210/continue-20261005/retained-results.json",
+      "original_sha256": "4573cc276cc69ece123833a8d3ce96e11f597d31b851d784fd654fe725429540",
+      "public_sha256": "7662bde6fb7147aecad372c0b1e905802867aeabc6614cb511c1294a6688154e"
+    },
+    {
+      "path": "docker/mi210/qkpv-overlay/opt/int8-vllm/docker/mi210/serving_campaign.py",
+      "original_sha256": "7468c9b23ac3a9ae95c4f54c16c777e722028dcc667540fdc1bc3488daf1eda3",
+      "public_sha256": "fb01786d218b0a910c1388bea37677e040a945d2adb56727b583f8c45434644b"
+    },
+    {
+      "path": "docker/mi210/qkpv-overlay/opt/int8-vllm/scripts/serve_mi210_32k_ab.sh",
+      "original_sha256": "1a560e2529251dd632a1037a486550b7a96983f8bd8d8bf071a2229279ea114e",
+      "public_sha256": "5ab966454668c7a0cd8d159e0c87e6424ab7b813df107013487844001100c779"
+    },
+    {
+      "path": "docker/mi210/qkpv-policy-overlay/opt/int8-vllm/docker/mi210/serving_campaign.py",
+      "original_sha256": "8369dac1b7d2c77b29b91687511a98b54805eae6e1a48a63e5b3730deb1d13d3",
+      "public_sha256": "b28fb79e1f3e9b8bd67105c4f42cb12d8c6931fe17935031c054a25bbb6d1a66"
+    },
+    {
+      "path": "docker/mi210/qkpv-policy-overlay/opt/int8-vllm/scripts/serve_mi210_32k_ab.sh",
+      "original_sha256": "dd30f75063c1ef63decdb09ad57d1148d65dd534ccda47b7eb77d4f1973c2f22",
+      "public_sha256": "d6b33ec1c4324d77a428573124a93ecb9c6584c43025d7d0ff0244096850e042"
+    },
+    {
+      "path": "docker/mi210/register-ck-overlay/opt/int8-vllm/docker/mi210/serving_campaign.py",
+      "original_sha256": "08e2ecd14ab65b465616e610ba213bbc914eb981d9f3b793af99011cc91e5acd",
+      "public_sha256": "4655c61bfef3aa446a51260eca38201965e88967860feca2f9086143c047506f"
+    },
+    {
+      "path": "docker/mi210/register-ck-overlay/opt/int8-vllm/scripts/serve_mi210_32k_ab.sh",
+      "original_sha256": "7ab383b8bb355b008e0f040fb3bcd5f2afeb84f23901e6d2adbbb6220816e2b8",
+      "public_sha256": "bd398eb841b7fb7a7e4e7098914ce1182db49981d61bb89b0d41380e941e4cbf"
+    },
+    {
+      "path": "docker/mi210/serving_campaign.py",
+      "original_sha256": "8369dac1b7d2c77b29b91687511a98b54805eae6e1a48a63e5b3730deb1d13d3",
+      "public_sha256": "b28fb79e1f3e9b8bd67105c4f42cb12d8c6931fe17935031c054a25bbb6d1a66"
+    },
+    {
+      "path": "docs/serving/online_serving/openai_compatible_server.md",
+      "original_sha256": "cb91181078b4ba06fd4dbd4dbfe4f29ac703f7d73edef063cb6090acae940e2f",
+      "public_sha256": "f05885797eeed532bfdfbc4ecff046ea0b56f4c67e33356c3c5b9e1c94af6d2f"
+    },
+    {
+      "path": "examples/pooling/embed/openai_embedding_long_text/client.py",
+      "original_sha256": "e227e4de127cf4c40af401fb74059a3dc8b8b972d5fb185da50111e59f0840ed",
+      "public_sha256": "66587e60d8d880c0244f59f43c99d7362d6089dfd5618273b330e08bee6d779a"
+    },
+    {
+      "path": "scripts/qat_battery.py",
+      "original_sha256": "6cda3d82987ee758fd09b9c4604d865d71a1ee5a232f187f1c6d414d832c5a8a",
+      "public_sha256": "98d2d9703426dd18defb6730f974ed0441784752976618e6bd4853ddfb3e7221"
+    },
+    {
+      "path": "scripts/serve_bf16ref_diag.sh",
+      "original_sha256": "5c02b6ba5b2315d842a472ed18858d7f4b8fa4f9f1c1bff6d0752cb852b90897",
+      "public_sha256": "0f589619f7d3c52b16282be7e3a76a92754bab7ed84b27c6de76b6707c13ea1f"
+    },
+    {
+      "path": "scripts/serve_mi210_32k_ab.sh",
+      "original_sha256": "dd30f75063c1ef63decdb09ad57d1148d65dd534ccda47b7eb77d4f1973c2f22",
+      "public_sha256": "d6b33ec1c4324d77a428573124a93ecb9c6584c43025d7d0ff0244096850e042"
+    },
+    {
+      "path": "tests/entrypoints/serve/middleware/test_optional_middleware.py",
+      "original_sha256": "32112b63fa3ab2bc4ab80e40b43193fbfc32a9cd250e30e8c41563a7bb53e4bc",
+      "public_sha256": "0946284076f84bb256a7e005569965d490d54c2905b41af04842dce929100427"
+    },
+    {
+      "path": "vllm/entrypoints/serve/middleware/register.py",
+      "original_sha256": "cff2d2c00e16f45a942eb1c1ef591834cb58d34ec9eefb3269f9134c4b1087bf",
+      "public_sha256": "3ae896b02c650be65eddb4d66d45e1c2a2fe1c4332f1a778d32238517c56a0b0"
+    },
+    {
+      "path": "mi210-github-record/upload-manifest.json",
+      "original_sha256": "1bc9fc74fe9a0b7a703cf590115bf3a9f9ecdfd990212332b4784bae21dcde95",
+      "public_sha256": "0d72bc7dda1a141cf1083c2795b37d012cd33f426b42d1dd6777db34828e3764"
+    },
+    {
+      "path": "mi210_fix_draft_backend.py",
+      "original_sha256": "58a8b8b6480c43ccc0e3aff73436ef03217d1f187fe62d6224c2512525246fe2",
+      "public_sha256": "b07589e96c107f0c69db970cd516e22eb01fd3bfa57f99d05939de3146494a1c"
+    },
+    {
+      "path": "mi210_profile_winner.py",
+      "original_sha256": "69847bdac824d5feb49562d508d956738314101b024ea511b8767320e95b3d81",
+      "public_sha256": "4c867c66c701ebfd2ef68a59f9587a9ae10854c573dfcdb130cfa257b6733fdb"
+    }
+  ],
+  "exclusions": [
+    "credentials and private container/image inspection files",
+    "model weights and Docker image contents"
+  ],
+  "raw_private_copies": "Retained in local full backup"
+}

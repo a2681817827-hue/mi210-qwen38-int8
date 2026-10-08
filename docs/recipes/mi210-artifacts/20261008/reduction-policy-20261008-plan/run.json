@@ -1,0 +1,26 @@
+{
+  "status": "MEASUREMENTS_COMPLETE_SELECTION_PENDING",
+  "image": "sha256:1f6127a497d07ecf26322462fbceaf0c87f7c3bdb982aaa45c23945cd7904618",
+  "target_tps": 120,
+  "fallback_tps": 110,
+  "phases": [
+    {
+      "label": "norm-control",
+      "output_dir": "/root/int8-vllm/logs/mi210/reduction-policy-norm-control-20261008",
+      "status": "MEASURED",
+      "generation_tps": 106.84597024619461,
+      "exact_diverse_outputs": 52,
+      "total_prompts": 52,
+      "mean_coarsened_kl": 0.0
+    },
+    {
+      "label": "norm-qkpv",
+      "output_dir": "/root/int8-vllm/logs/mi210/reduction-policy-norm-qkpv-20261008",
+      "status": "MEASURED",
+      "generation_tps": 101.45738149900798,
+      "exact_diverse_outputs": 52,
+      "total_prompts": 52,
+      "mean_coarsened_kl": 0.0
+    }
+  ]
+}

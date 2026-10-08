@@ -1,0 +1,97 @@
+{
+  "source": "Tested saved-image operator sources and default-off experimental additions",
+  "files": [
+    {
+      "path": "operators/aiter/LICENSE",
+      "sha256": "0baca809927cad448401b252ce3bae12687c2987597ad7088cf3423f872d5bcd"
+    },
+    {
+      "path": "operators/aiter/gemm_op_a8w8.py",
+      "sha256": "f1e19a6df30bb4c3ae5802a5745733984650b97c55bae636be9ffb235e61bbba"
+    },
+    {
+      "path": "operators/aiter/selections.json",
+      "sha256": "f8db61a8879137cf569504ea1ed7b4f26262f9bbdd547b9daa3a376b68f959a2"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/_aiter_ops.py",
+      "sha256": "8db640de1e3c36563f52fc7dc026a05f3e8cde00e198c65b40b5aa78fec1ecd3"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/envs.py",
+      "sha256": "c667a0e684fe1ee0df2ca7087cdd782068c43f82a6b938cfcbe9ecf7585df9d7"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/model_executor/kernels/linear/mixed_precision/act_quant_rn.py",
+      "sha256": "9b4ec4b6f30e54f21209dfed26628acd5b1455acf07d2185ab7138f4cae12efa"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/model_executor/kernels/linear/scaled_mm/aiter.py",
+      "sha256": "75df01780ffd70ba6597f421d8f4d080412b27164e294192427df19a7894883b"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/model_executor/layers/mamba/gdn/mi210_native_gdn.py",
+      "sha256": "a237d4e184518dcd6406e86742b95376f4d522b39fe5cf72f98e73e1f6f93904"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py",
+      "sha256": "7a14cfc189e8accb70ffcc9d7c3aee4f579b11d7b4901e565b8ef92d26387ad9"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/model_executor/layers/vocab_parallel_embedding.py",
+      "sha256": "86088c7bdd39208d530af50fee174a9f738b451245245e47372dcc9586b55900"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/platforms/rocm.py",
+      "sha256": "1e31798aec5b0de15a7bb7a3e0765342c258c1e5741b4adf21ebc357bba8118c"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/backends/rocm_aiter_unified_attn.py",
+      "sha256": "c693951830746b2a08098b381653d835232fec70a5e6c2a5d122d68cfb769054"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/__pycache__/mi210_split_tuning.cpython-312.pyc",
+      "sha256": "8fc60619d756c067314ddb06736e5609f732ae3d2eebe34dcf7bd06b3b25749d"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/gfx90a_g128_gluon_decode.py",
+      "sha256": "47b46687178ba71cd40e0cb244920daefaadbc7b73de87d9802e314537e87bb7"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/gfx90a_g128_gluon_draft.py",
+      "sha256": "e52e9f0a727c3fe84f64e1594d80c36dced2f4c14c3285b3675f9abf1a1f1553"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/gfx90a_g128_gluon_prefill.py",
+      "sha256": "6eeaa9bc0aeddf293d133029ff8bfe7afeec15983f3853afbff2cfaf21750e0e"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/gfx90a_g128_gluon_qkpv.py",
+      "sha256": "8c2be715584cbc75834b0c5af6452169c0e270c0a0ed3eda1527ac6fdd39bdf3"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/mi210_split_tuning.py",
+      "sha256": "df8ee6f992474c28007bd7cfc5683649f9dcf7d1464f4bf715c9e2fd90560105"
+    },
+    {
+      "path": "operators/int8-vllm/vllm/v1/attention/ops/triton_unified_attention.py",
+      "sha256": "49e0ece49cbfcd18dc028994462c89b636a9e58138214eed24af9cdedab556f6"
+    },
+    {
+      "path": "operators/native-gdn/mi210_gdn.cu",
+      "sha256": "4285dd4735e655fcaf607df433b735d2b84ff91dc0465154f2da8caf33959803"
+    },
+    {
+      "path": "operators/native-gdn/provenance.json",
+      "sha256": "388ae57f916f8eb65dd7cf068d92a7edf3646e6b065d4c99bc4d23ff01bc27f2"
+    },
+    {
+      "path": "operators/snapshot-manifest-20261008.json",
+      "sha256": "ed63b5a399dc4e961dbebac02ae353e5261b4887f3441bf1894293cb218ebfc7"
+    },
+    {
+      "path": "operators/snapshot-manifest.json",
+      "sha256": "41f78e675d4a8911e1c4db3665bc9970f81cf28d791a4bfe257a7ececad2c028"
+    }
+  ]
+}

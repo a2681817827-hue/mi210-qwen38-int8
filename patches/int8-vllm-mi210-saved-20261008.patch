@@ -1,0 +1,1689 @@
+diff --git a/vllm/_aiter_ops.py b/vllm/_aiter_ops.py
+--- a/vllm/_aiter_ops.py
++++ b/vllm/_aiter_ops.py
+@@ -1949,6 +1949,16 @@
+         return cls._AITER_ENABLED and cls._LINEAR_ENABLED
+ 
+     @classmethod
++    def is_int8_linear_enabled(cls) -> bool:
++        """Allow CDNA2 CK INT8 without enabling its unsupported FP8 paths."""
++        if current_platform.is_rocm() and IS_AITER_FOUND:
++            from vllm.platforms.rocm import on_gfx90a
++
++            if on_gfx90a():
++                return cls._AITER_ENABLED and cls._LINEAR_ENABLED
++        return bool(cls.is_linear_enabled())
++
++    @classmethod
+     @if_aiter_supported
+     def is_linear_fp8_enabled(cls) -> bool:
+         return cls.is_linear_enabled()
+@@ -2148,6 +2158,42 @@
+         from aiter.fused_moe import fused_moe
+ 
+         return "gate_mode" in inspect.signature(fused_moe).parameters
++
++    @staticmethod
++    def register_gfx90a_ck_int8_ops_once() -> None:
++        """Register only the validated AITER CK INT8 ops on gfx90a.
++
++        Do not widen the general AITER support gate: gfx90a/CDNA2 has no
++        native FP8 support and must not inherit the MI3xx FP8/MoE paths.
++        """
++        if not current_platform.is_rocm() or not IS_AITER_FOUND:
++            return
++
++        from vllm.platforms.rocm import on_gfx90a
++
++        if not on_gfx90a():
++            return
++
++        # These two wrappers use AITER's CK INT8 path only.
++        if not hasattr(
++            torch.ops.vllm, "rocm_aiter_pertoken_quant_int8"
++        ):
++            direct_register_custom_op(
++                op_name="rocm_aiter_pertoken_quant_int8",
++                op_func=_rocm_aiter_pertoken_quant_int8_impl,
++                fake_impl=_rocm_aiter_pertoken_quant_int8_fake,
++                dispatch_key=current_platform.dispatch_key,
++            )
++
++        if not hasattr(
++            torch.ops.vllm, "rocm_aiter_gemm_a8w8_ck"
++        ):
++            direct_register_custom_op(
++                op_name="rocm_aiter_gemm_a8w8_ck",
++                op_func=_rocm_aiter_gemm_a8w8_ck_impl,
++                fake_impl=_rocm_aiter_gemm_a8w8_ck_fake,
++                dispatch_key=current_platform.dispatch_key,
++            )
+ 
+     @staticmethod
+     def register_ops_once() -> None:
+@@ -3745,3 +3791,4 @@
+ 
+ 
+ rocm_aiter_ops.register_ops_once()
++rocm_aiter_ops.register_gfx90a_ck_int8_ops_once()
+diff --git a/vllm/envs.py b/vllm/envs.py
+--- a/vllm/envs.py
++++ b/vllm/envs.py
+@@ -2403,4 +2403,15 @@
+     for var in ray_noset_env_vars:
+         factors[var] = normalize_value(os.getenv(var))
+ 
++    # This alias changes a traced Triton kernel; separate its compiled artifacts.
++    # The default path keeps the existing environment fingerprint.
++    if os.getenv("VLLM_MI210_REGISTER_QUANT_ALIAS", "0") == "1":
++        factors["VLLM_MI210_REGISTER_QUANT_ALIAS"] = 1
++    if os.getenv("VLLM_MI210_QKPV_INTERLEAVE", "0") == "1":
++        factors["VLLM_MI210_QKPV_INTERLEAVE"] = 1
++    if os.getenv("VLLM_MI210_REDUCTION_POLICY", "0") == "1":
++        factors["VLLM_MI210_REDUCTION_POLICY_SHA256"] = os.getenv(
++            "VLLM_MI210_REDUCTION_POLICY_SHA256"
++        )
++
+     return factors
+diff --git a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+--- a/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
++++ b/vllm/model_executor/kernels/linear/scaled_mm/aiter.py
+@@ -48,7 +48,7 @@
+         except Exception:
+             return False, "requires `aiter` to be installed."
+ 
+-        if not rocm_aiter_ops.is_linear_enabled():
++        if not rocm_aiter_ops.is_int8_linear_enabled():
+             return (
+                 False,
+                 "requires setting `VLLM_ROCM_USE_AITER=1` "
+@@ -137,6 +137,25 @@
+         if not current_platform.is_rocm():
+             return False, "requires ROCm."
+         if not rocm_aiter_ops.is_linear_fp8_enabled():
++            # The architecture gate for every aiter fp8 GEMM lives here, but
++            # indirectly: is_linear_fp8_enabled is wrapped in
++            # @if_aiter_supported, which short-circuits to None on anything
++            # below CDNA3 no matter how the env vars are set. It is real and
++            # load-bearing -- gfx90a is rejected here even with aiter
++            # installed and all three VLLM_ROCM_USE_AITER* flags set -- but
++            # nothing about it is visible at this call site, and the message
++            # below used to blame the env vars for it. That reads as "you
++            # configured this wrong" on hardware where no configuration would
++            # have helped. Name the real cause when it is the arch.
++            from vllm.platforms.rocm import get_cdna_version
++
++            cdna = get_cdna_version()
++            if cdna <= 2:
++                return (
++                    False,
++                    "requires CDNA3+ (gfx942/gfx950); aiter has no fp8 GEMM "
++                    f"for this architecture (CDNA {cdna}).",
++                )
+             return (
+                 False,
+                 "requires setting `VLLM_ROCM_USE_AITER=1` "
+@@ -225,6 +244,20 @@
+             return False, "requires ROCm."
+ 
+         if not rocm_aiter_ops.is_linear_hipbmm_enabled():
++            # Same indirect CDNA3+ gate as
++            # AiterPreshuffledPerTokenFp8ScaledMMLinearKernel above, reached
++            # via @if_aiter_supported plus an explicit get_cdna_version() > 2
++            # inside is_linear_hipbmm_enabled. Report the arch when that is
++            # what rejected the layer, rather than blaming the env vars.
++            from vllm.platforms.rocm import get_cdna_version
++
++            cdna = get_cdna_version()
++            if cdna <= 2:
++                return (
++                    False,
++                    "requires CDNA3+ (gfx942/gfx950); aiter has no fp8 GEMM "
++                    f"for this architecture (CDNA {cdna}).",
++                )
+             return (
+                 False,
+                 "requires setting `VLLM_ROCM_USE_AITER=1`, "
+diff --git a/vllm/model_executor/layers/mamba/gdn/mi210_native_gdn.py b/vllm/model_executor/layers/mamba/gdn/mi210_native_gdn.py
+--- /dev/null
++++ b/vllm/model_executor/layers/mamba/gdn/mi210_native_gdn.py
+@@ -0,0 +1,26 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Strict opt-in loader for the separately built MI210 GDN experiment."""
++from functools import lru_cache
++import hashlib
++import json
++from pathlib import Path
++
++import torch
++
++
++@lru_cache(maxsize=1)
++def load_native_gdn() -> None:
++    from vllm.platforms.rocm import on_gfx90a
++
++    if not on_gfx90a():
++        raise RuntimeError('The native MI210 GDN experiment requires gfx90a')
++    build = Path('/opt/int8-vllm/docker/mi210/native-gdn-build')
++    provenance = json.loads((build / 'provenance.json').read_text())
++    if provenance['arch'] != 'gfx90a' or provenance['max_verify_tokens'] != 16:
++        raise RuntimeError('Native GDN provenance does not match this experiment')
++    source = build / 'mi210_gdn.cu'
++    if hashlib.sha256(source.read_bytes()).hexdigest() != provenance['generated_sha256']:
++        raise RuntimeError('Native GDN generated source drift')
++    if hasattr(torch.ops._C, 'fused_gdn_decode_post_conv_mtp'):
++        raise RuntimeError('A different fused GDN operator is already registered')
++    torch.ops.load_library(str(build / 'mi210_native_gdn.so'))
+diff --git a/vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py b/vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+--- a/vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
++++ b/vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+@@ -153,7 +153,9 @@
+ logger.info("ENVCANARY %s", {k: os.environ.get(k, "<unset>") for k in _CANARY})
+ 
+ 
+-MAX_FUSED_GDN_MTP_TOKENS = 8
++MAX_FUSED_GDN_MTP_TOKENS = (
++    16 if os.environ.get("VLLM_MI210_NATIVE_GDN") == "1" else 8
++)
+ FUSED_GDN_STATE_DTYPES = (torch.float32, torch.bfloat16)
+ 
+ # Env-gated (VLLM_GDN_STATEHASH, or the GDNSTATEHASH flag file which selects
+@@ -649,6 +651,14 @@
+         self.enable_packed_recurrent_decode = (
+             envs.VLLM_ENABLE_FLA_PACKED_RECURRENT_DECODE
+         )
++        self.mi210_native_gdn = os.environ.get("VLLM_MI210_NATIVE_GDN") == "1"
++        if self.mi210_native_gdn:
++            from vllm.model_executor.layers.mamba.gdn.mi210_native_gdn import (
++                load_native_gdn,
++            )
++
++            load_native_gdn()
++            logger.info_once("Loaded opt-in MI210 native GDN, max verify tokens=16")
+         self.gdn_decode_kernel = envs.VLLM_GDN_DECODE_KERNEL.strip().lower()
+         if self.gdn_decode_kernel == "cuda":
+             reason = self._fused_gdn_decode_unsupported_reason(vllm_config)
+@@ -1022,9 +1032,14 @@
+             num_tokens = hidden_states.size(0)
+             projected_states_qkvz, _ = self.in_proj_qkvz(hidden_states)
+             ba_weight = getattr(self.in_proj_ba, "weight", None)
++            mi210_tiny_ba = False
++            if os.environ.get("VLLM_MI210_GDN_TINY_BA") == "1":
++                from vllm.platforms.rocm import on_gfx90a
++
++                mi210_tiny_ba = on_gfx90a()
+             use_tiny_ba = (
+-                os.environ.get("VLLM_GFX908_TINY_BA") == "1"
+-                and 0 < num_tokens <= 64
++                (os.environ.get("VLLM_GFX908_TINY_BA") == "1" or mi210_tiny_ba)
++                and 0 < num_tokens <= (18 if mi210_tiny_ba else 64)
+                 and hidden_states.dtype == torch.bfloat16
+                 and hidden_states.is_contiguous()
+                 and ba_weight is not None
+@@ -1032,7 +1047,7 @@
+                 and ba_weight.is_contiguous()
+                 and ba_weight.ndim == 2
+                 and ba_weight.shape[1] == hidden_states.shape[1]
+-                and ba_weight.shape[0] <= 64
++                and ba_weight.shape[0] <= (96 if mi210_tiny_ba else 64)
+                 and hidden_states.shape[1] % 128 == 0
+                 and getattr(self.in_proj_ba, "bias", None) is None
+             )
+@@ -1051,6 +1066,23 @@
+                 dtype=hidden_states.dtype,
+                 device=hidden_states.device,
+             )
++            if (
++                self.mi210_native_gdn
++                and self.enable_fused_gdn_decode
++                and not self.gqa_interleaved_layout
++            ):
++                # This opaque op includes normalization on both its native
++                # decode path and its generic fallback. A runtime Python
++                # flag inside an opaque op cannot select the compiled norm
++                # branch safely.
++                torch.ops.vllm.qwen_gdn_attention_core_fused_norm_packed(
++                    projected_states_qkvz,
++                    projected_states_ba,
++                    core_attn_out,
++                    layer_name=_encode_layer_name(self.prefix),
++                )
++                output, _ = self.out_proj(core_attn_out.flatten(-2))
++                return output
+             z = torch.empty(
+                 (num_tokens, self.num_v_heads // self.tp_size, self.head_v_dim),
+                 dtype=projected_states_qkvz.dtype,
+diff --git a/vllm/model_executor/layers/vocab_parallel_embedding.py b/vllm/model_executor/layers/vocab_parallel_embedding.py
+--- a/vllm/model_executor/layers/vocab_parallel_embedding.py
++++ b/vllm/model_executor/layers/vocab_parallel_embedding.py
+@@ -3,6 +3,7 @@
+ 
+ from collections.abc import Sequence
+ from dataclasses import dataclass
++import os
+ 
+ import torch
+ import torch.nn.functional as F
+@@ -98,8 +99,16 @@
+     CK GEMM stay opaque to any compiled consumer. Output dtype follows the
+     activation input (fp16 serving).
+     """
+-    flat = x.reshape(-1, x.shape[-1]).to(torch.float16)
+-    x_q, x_s = torch.ops.vllm.rocm_aiter_pertoken_quant_int8(flat)
++    flat = x.reshape(-1, x.shape[-1])
++    if getattr(layer, "_mi210_w8a8_head", False):
++        from vllm.model_executor.kernels.linear.mixed_precision.act_quant_rn import (
++            pertoken_quant_rn,
++        )
++
++        x_q, x_s = pertoken_quant_rn(flat)
++    else:
++        flat = flat.to(torch.float16)
++        x_q, x_s = torch.ops.vllm.rocm_aiter_pertoken_quant_int8(flat)
+     out = torch.ops.vllm.rocm_aiter_gemm_a8w8_ck(
+         x_q, layer._ck_q, x_s, layer._ck_s, flat.dtype
+     )
+@@ -138,9 +147,22 @@
+ 
+             dispatch_cpu_unquantized_gemm(layer, remove_weight=False)
+         elif current_platform.is_rocm():
+-            from vllm.platforms.rocm import on_gfx908
++            from vllm.platforms.rocm import on_gfx908, on_gfx90a
+ 
+             is_floating = layer.weight.is_floating_point()
++            # The gfx908 switch alone did not activate the MI210 head: it
++            # silently retained the full-vocabulary BF16 GEMM. This separate
++            # opt-in changes logits numerics and requires a fidelity gate.
++            if (
++                on_gfx90a()
++                and os.environ.get("VLLM_MI210_INT8_LM_HEAD") == "1"
++                and getattr(layer, "_gfx908_skip_int8", False)
++                and is_floating
++                and getattr(layer, "bias", None) is None
++            ):
++                _quantize_lm_head_w8a8_(layer)
++                layer._mi210_w8a8_head = True
++                return
+             if on_gfx908() and envs.VLLM_GFX908_INT8_EMBEDDING and is_floating:
+                 # Quantize the input-embedding gather only. The tied LM head
+                 # shares this weight and its logits GEMM needs dense fp16
+diff --git a/vllm/platforms/rocm.py b/vllm/platforms/rocm.py
+--- a/vllm/platforms/rocm.py
++++ b/vllm/platforms/rocm.py
+@@ -440,6 +440,45 @@
+     return _ON_GFX908
+ 
+ 
++_FREE_KERNEL_HEAD_MULTIPLE = 16 * (256 // (64 if _ON_GFX9 else 32))
++
++
++def _uses_rocm_free_paged_attention(head_size: int, block_size: int) -> bool:
++    """Whether a shape falls through to the free kernel.
++
++    The launcher switches on head_size first and then block_size, taking the
++    template-specialized kernel only for head_size in {64, 128} together with
++    block_size in {16, 32}; anything else lands on the free kernel.
++    """
++    return head_size not in (64, 128) or block_size not in (16, 32)
++
++
++def _rocm_free_paged_attention_ok(head_size: int, block_size: int) -> bool:
++    """False when the free kernel would drop part of the V dimension."""
++    if not _uses_rocm_free_paged_attention(head_size, block_size):
++        return True
++    return head_size % _FREE_KERNEL_HEAD_MULTIPLE == 0
++
++
++@cache
++def _free_pa_large_block_ok() -> bool:
++    """Opt-in escape from the gfx90a block_size <= 64 restriction above.
++
++    That restriction exists because the free paged-attention kernel addressed
++    KV slots from the PARTITION-LOCAL token index rather than the global one,
++    in two places (the K slot offset, and a V base pointer hoisted out of the
++    vtoken_depth loop). Both are only congruent to the correct value when
++    block_size divides the partition size, which is why 16/32/64 agreed with
++    the reference and 128/512/1024/2096 mismatched by order 1.
++
++    csrc/rocm/attention.cu now derives both offsets from the global token
++    index. Set VLLM_ROCM_FREE_PA_LARGE_BLOCK=1 to admit block_size > 64 on
++    gfx90a and use the custom kernel; leave it unset to keep the conservative
++    behaviour and stay on the Triton fallback.
++    """
++    return os.environ.get("VLLM_ROCM_FREE_PA_LARGE_BLOCK", "0") == "1"
++
++
+ @cache
+ def use_rocm_custom_paged_attention(
+     qtype: torch.dtype,
+@@ -454,18 +493,51 @@
+ ) -> bool:
+     # custom paged attn always supported on V0. On V1, requires sliding window
+     # disabled due to observed numerical discrepancy.
+-    if on_cdna():
++    # The free kernel (runtime head_size/block_size) handles any combination not
++    # covered by the template-specialized non-free kernels.
++    #
++    # Deliberately on_gfx9(), NOT upstream's on_cdna(): _ON_CDNA matches any
++    # "gfx9" substring (so gfx900/906/908) plus gfx1250, while _ON_GFX9 is
++    # exactly {gfx90a, gfx942, gfx950} -- the set these kernels are built and
++    # validated for. Widening the gate here would dispatch the multi-pass
++    # reduction onto hardware it was never tested on.
++    if on_gfx908():
++        # Preserve the MI100 template-kernel contract.
++        return (
++            (sliding_window == 0 or sliding_window == (-1, -1))
++            and qtype in (torch.half, torch.bfloat16)
++            and head_size in (64, 128)
++            and block_size in (16, 32)
++            and 1 <= gqa_ratio <= 16
++            and sinks is None
++        )
++    if on_gfx9():
++        # Non-free kernel: head_size in {64,128} and block_size in {16,32}.
++        # Free kernel: any head_size in {64,128,192,256} and any block_size.
+         return (
+             (sliding_window == 0 or sliding_window == (-1, -1))
+             and (qtype == torch.half or qtype == torch.bfloat16)
+-            and (head_size == 64 or head_size == 128)
+-            and (block_size == 16 or block_size == 32)
++            and head_size in (64, 128, 192, 256)
++            and _rocm_free_paged_attention_ok(head_size, block_size)
++            and (block_size <= 64 or not on_gfx90a() or _free_pa_large_block_ok())
+             and (gqa_ratio >= 1 and gqa_ratio <= 16)
+-            and max_seq_len <= 128 * 1024
+             and sinks is None
+         )
+-
++    elif _ON_GFX12X:
++        # Non-free kernel: head_size=128 and block_size=16.
++        # Free kernel: any head_size in {64,128,192,256} and any block_size.
++        return (
++            (sliding_window == 0 or sliding_window == (-1, -1))
++            and (qtype == torch.half or qtype == torch.bfloat16)
++            and head_size in (64, 128, 192, 256)
++            and _rocm_free_paged_attention_ok(head_size, block_size)
++            and (gqa_ratio >= 1 and gqa_ratio <= 16)
++            and alibi_slopes is None
++            and kv_cache_dtype == "auto"
++            and sinks is None
++        )
+     else:
++        # GFX11: only the template-specialized non-free kernel (head_size=128, block_size=16).
+         return (
+             _ON_GFX1X
+             and (sliding_window == 0 or sliding_window == (-1, -1))
+@@ -473,7 +545,6 @@
+             and head_size == 128
+             and block_size == 16
+             and (gqa_ratio >= 3 and gqa_ratio <= 16)
+-            and max_seq_len <= 128 * 1024
+             and alibi_slopes is None
+             and kv_cache_dtype == "auto"
+             and sinks is None
+diff --git a/vllm/v1/attention/backends/rocm_aiter_unified_attn.py b/vllm/v1/attention/backends/rocm_aiter_unified_attn.py
+--- a/vllm/v1/attention/backends/rocm_aiter_unified_attn.py
++++ b/vllm/v1/attention/backends/rocm_aiter_unified_attn.py
+@@ -50,6 +50,12 @@
+         "fp8_e4m3",
+         "fp8_e5m2",
+         "int8_per_token_head",
++        "int8_block_g4",
++        "int8_block_g8",
++        "int8_block_g16",
++        "int8_block_g32",
++        "int8_block_g64",
++        "int8_block_g128",
+     ]
+ 
+     @staticmethod
+@@ -376,9 +382,6 @@
+         logger.info_once(
+             "Using aiter unified attention for RocmAiterUnifiedAttentionImpl"
+         )
+-        from aiter.ops.triton.unified_attention import unified_attention
+-
+-        self.unified_attention = unified_attention
+         self.supports_quant_query_input = True
+ 
+         self._kv_quant_mode = get_kv_quant_mode(kv_cache_dtype)
+@@ -387,6 +390,14 @@
+         self._block_g = (
+             self._kv_quant_mode.int8_block_group if self._is_int8_block else None
+         )
++        # Grouped INT8 uses the fork's stride-aware kernels for both causal
++        # target attention and non-causal DFlash attention. Do not import the
++        # unrelated AITER unified kernel/config table on CDNA2 for this path.
++        self.unified_attention = None
++        if not self._is_int8_block:
++            from aiter.ops.triton.unified_attention import unified_attention
++
++            self.unified_attention = unified_attention
+ 
+     def _split_kv_cache(
+         self, kv_cache: torch.Tensor
+@@ -698,10 +709,18 @@
+             )
+ 
+             _segm_kw = {}
++            mi210_draft_segments = False
++            if os.environ.get("VLLM_MI210_DRAFT_GLUON") == "1":
++                from vllm.platforms.rocm import on_gfx90a
++                mi210_draft_segments = (
++                    on_gfx90a() and self.num_heads == 32
++                    and self.num_kv_heads == 8 and self.head_size == 128
++                    and max_seqlen_q <= 16
++                )
+             if (
+-                os.environ.get("VLLM_G128_DRAFT_GLUON") == "1"
++                ((os.environ.get("VLLM_G128_DRAFT_GLUON") == "1"
++                  and max_seqlen_q <= 8) or mi210_draft_segments)
+                 and getattr(self, "_g8_k", None) is not None
+-                and max_seqlen_q <= 8
+             ):
+                 if not hasattr(self, "_segm_buffers"):
+                     self._alloc_segm_buffers(kv_cache.device)
+diff --git a/vllm/v1/attention/ops/gfx90a_g128_gluon_decode.py b/vllm/v1/attention/ops/gfx90a_g128_gluon_decode.py
+--- /dev/null
++++ b/vllm/v1/attention/ops/gfx90a_g128_gluon_decode.py
+@@ -0,0 +1,219 @@
++# SPDX-License-Identifier: Apache-2.0
++"""64-row gfx90a grouped-int8 split-K decode core for verify batches."""
++
++from triton.experimental import gluon as g
++from triton.experimental.gluon import language as gl
++
++
++@g.jit
++def g128_core_cdna2(
++    Q,
++    K,
++    V,
++    SK,
++    SV,
++    BT,
++    SEQLENS,
++    CUQ,
++    PARTIAL,
++    PMAX,
++    PSUM,
++    SCALE: gl.constexpr,
++    NUM_SEQS: gl.constexpr,
++    NUM_QHEADS: gl.constexpr,
++    NQ_PER_KV: gl.constexpr,
++    BLOCK_SIZE: gl.constexpr,
++    SPLITS: gl.constexpr,
++    BT_STRIDE: gl.constexpr,
++    Q_STRIDE0: gl.constexpr,
++    Q_STRIDE1: gl.constexpr,
++    K_STRIDE0: gl.constexpr,
++    K_STRIDE1: gl.constexpr,
++    K_STRIDE2: gl.constexpr,
++    V_STRIDE0: gl.constexpr,
++    V_STRIDE1: gl.constexpr,
++    V_STRIDE2: gl.constexpr,
++    S_STRIDE0: gl.constexpr,
++    S_STRIDE1: gl.constexpr,
++    S_STRIDE2: gl.constexpr,
++    MMA_DT: gl.constexpr,
++    MMA_FP16: gl.constexpr,
++    KV_TILE: gl.constexpr = 32,
++    Q_ROWS: gl.constexpr = 64,
++    Q_TOKENS: gl.constexpr = 10,
++    QK_INT8: gl.constexpr = False,
++    NUM_WARPS: gl.constexpr = 4,
++    MMA_WARPS_N: gl.constexpr = 1,
++):
++    gl.static_assert(Q_TOKENS * NQ_PER_KV <= Q_ROWS)
++    gl.static_assert(NUM_WARPS == 2 or NUM_WARPS == 4)
++    gl.static_assert(NUM_WARPS % MMA_WARPS_N == 0)
++    block_id = gl.program_id(0)
++    kv_head = gl.program_id(1)
++    seg = gl.program_id(2)
++    seq = 0
++    for s in gl.static_range(NUM_SEQS):
++        start = gl.load(CUQ + s)
++        first_block = start // Q_TOKENS + s
++        seq = gl.where(block_id >= first_block, s, seq)
++    q_start = gl.load(CUQ + seq)
++    q_end = gl.load(CUQ + seq + 1)
++    q_len = q_end - q_start
++    local_block = block_id - (q_start // Q_TOKENS + seq)
++    if local_block * Q_TOKENS >= q_len:
++        return
++    seq_len = gl.load(SEQLENS + seq)
++    context = seq_len - q_len
++    tiles_per_seg = (seq_len + SPLITS * KV_TILE - 1) // (SPLITS * KV_TILE)
++    lo = seg * tiles_per_seg
++    if lo * KV_TILE >= seq_len:
++        return
++    # The causal mask below excludes the conservative extra key in this bound.
++    max_prefix = gl.minimum(context + local_block * Q_TOKENS + Q_TOKENS + 1, seq_len)
++    hi = gl.minimum((seg + 1) * tiles_per_seg, (max_prefix + KV_TILE - 1) // KV_TILE)
++
++    q_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 8], threads_per_warp=[4, 16],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    kv_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 8], threads_per_warp=[4, 16],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    if MMA_FP16:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
++        )
++    else:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
++        )
++    out_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 2], threads_per_warp=[16, 4],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    qm = gl.arange(0, Q_ROWS, layout=gl.SliceLayout(1, q_layout))
++    qd = gl.arange(0, 128, layout=gl.SliceLayout(0, q_layout))
++    qpos = local_block * Q_TOKENS + qm // NQ_PER_KV
++    qhead = kv_head * NQ_PER_KV + qm % NQ_PER_KV
++    qvalid = (qpos < q_len) & (qhead < NUM_QHEADS) & (qm < Q_TOKENS * NQ_PER_KV)
++    qptr = Q + (q_start + qpos[:, None]) * Q_STRIDE0 + qhead[:, None] * Q_STRIDE1 + qd[None, :]
++    q0 = gl.load(qptr, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    q1 = gl.load(qptr + 128, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    if QK_INT8:
++        # Separate query scales match the existing two 128-element KV groups.
++        # PV keeps its BF16/FP16 MFMA path and FP32 softmax accumulation.
++        qs0 = gl.maximum(gl.max(gl.abs(q0.to(gl.float32)), axis=1) / 127.0, 1.0e-6)
++        qs1 = gl.maximum(gl.max(gl.abs(q1.to(gl.float32)), axis=1) / 127.0, 1.0e-6)
++        qr0 = q0.to(gl.float32) / qs0[:, None]
++        qr1 = q1.to(gl.float32) / qs1[:, None]
++        q0 = (qr0 + gl.where(qr0 >= 0, 0.5, -0.5)).to(gl.int8)
++        q1 = (qr1 + gl.where(qr1 >= 0, 0.5, -0.5)).to(gl.int8)
++        qs0 = gl.convert_layout(qs0, gl.SliceLayout(1, mma))
++        qs1 = gl.convert_layout(qs1, gl.SliceLayout(1, mma))
++    QK_WIDTH: gl.constexpr = 4 if QK_INT8 else 2
++    K_DTYPE: gl.constexpr = gl.int8 if QK_INT8 else MMA_DT
++    q0 = gl.convert_layout(q0, gl.DotOperandLayout(0, mma, k_width=QK_WIDTH))
++    q1 = gl.convert_layout(q1, gl.DotOperandLayout(0, mma, k_width=QK_WIDTH))
++
++    score_rows = gl.arange(0, Q_ROWS, layout=gl.SliceLayout(1, mma))
++    score_cols = gl.arange(0, KV_TILE, layout=gl.SliceLayout(0, mma))
++    score_qpos = local_block * Q_TOKENS + score_rows // NQ_PER_KV
++    score_qhead = kv_head * NQ_PER_KV + score_rows % NQ_PER_KV
++    score_qvalid = ((score_qpos < q_len) & (score_qhead < NUM_QHEADS)
++                    & (score_rows < Q_TOKENS * NQ_PER_KV))
++    m = gl.full((Q_ROWS,), float('-inf'), gl.float32, layout=gl.SliceLayout(1, mma))
++    l = gl.full((Q_ROWS,), 1.0, gl.float32, layout=gl.SliceLayout(1, mma))
++    acc0 = gl.full((Q_ROWS, 128), 0.0, gl.float32, layout=mma)
++    acc1 = gl.full((Q_ROWS, 128), 0.0, gl.float32, layout=mma)
++
++    tn = gl.arange(0, KV_TILE, layout=gl.SliceLayout(1, kv_layout))
++    kd = gl.arange(0, 128, layout=gl.SliceLayout(0, kv_layout))
++    for j in range(lo, hi):
++        slot = (j * KV_TILE) % BLOCK_SIZE
++        # Widen before multiplying: the KV arena can exceed 2 GiB even
++        # though its block IDs fit in int32.
++        physical = gl.load(
++            BT + seq * BT_STRIDE + (j * KV_TILE) // BLOCK_SIZE
++        ).to(gl.int64)
++        kv_valid = gl.minimum(KV_TILE, max_prefix - j * KV_TILE)
++        valid_t = tn < kv_valid
++        kb = K + physical * K_STRIDE0 + kv_head * K_STRIDE2 + slot * K_STRIDE1
++        off_k = tn[:, None] * K_STRIDE1 + kd[None, :]
++        if kv_valid == KV_TILE:
++            k0 = gl.load(kb + off_k).to(K_DTYPE)
++            k1 = gl.load(kb + 128 + off_k).to(K_DTYPE)
++        else:
++            k0 = gl.load(kb + off_k, mask=valid_t[:, None], other=0).to(K_DTYPE)
++            k1 = gl.load(kb + 128 + off_k, mask=valid_t[:, None], other=0).to(K_DTYPE)
++        k0 = gl.convert_layout(gl.permute(k0, (1, 0)), gl.DotOperandLayout(1, mma, k_width=QK_WIDTH))
++        k1 = gl.convert_layout(gl.permute(k1, (1, 0)), gl.DotOperandLayout(1, mma, k_width=QK_WIDTH))
++        sptr_k = SK + physical * S_STRIDE0 + kv_head * S_STRIDE2 + (slot + tn) * S_STRIDE1
++        if kv_valid == KV_TILE:
++            sk0 = gl.load(sptr_k).to(gl.float32)
++            sk1 = gl.load(sptr_k + 1).to(gl.float32)
++        else:
++            sk0 = gl.load(sptr_k, mask=valid_t, other=1.0).to(gl.float32)
++            sk1 = gl.load(sptr_k + 1, mask=valid_t, other=1.0).to(gl.float32)
++        sk0 = gl.convert_layout(sk0, gl.SliceLayout(0, mma))
++        sk1 = gl.convert_layout(sk1, gl.SliceLayout(0, mma))
++        SCORE_DTYPE: gl.constexpr = gl.int32 if QK_INT8 else gl.float32
++        score0 = gl.full((Q_ROWS, KV_TILE), 0, SCORE_DTYPE, layout=mma)
++        score1 = gl.full((Q_ROWS, KV_TILE), 0, SCORE_DTYPE, layout=mma)
++        score0 = gl.amd.cdna3.mfma(q0, k0, score0)
++        score1 = gl.amd.cdna3.mfma(q1, k1, score1)
++        if QK_INT8:
++            scores = (score0.to(gl.float32) * (SCALE * sk0[None, :]) * qs0[:, None]
++                      + score1.to(gl.float32) * (SCALE * sk1[None, :]) * qs1[:, None])
++        else:
++            scores = score0 * (SCALE * sk0[None, :]) + score1 * (SCALE * sk1[None, :])
++        kvpos = j * KV_TILE + score_cols
++        mask = score_qvalid[:, None] & (kvpos[None, :] < max_prefix) & (kvpos[None, :] <= context + score_qpos[:, None])
++        scores = gl.where(mask, scores, float('-inf'))
++        m_new = gl.maximum(m, gl.max(scores, axis=1))
++        m_new = gl.where(m_new > float('-inf'), m_new, 0.0)
++        p = gl.exp(scores - m_new[:, None])
++        alpha = gl.exp(m - m_new)
++        l = l * alpha + gl.sum(p, axis=1)
++        m = m_new
++        acc0 = acc0 * alpha[:, None]
++        acc1 = acc1 * alpha[:, None]
++        vb = V + physical * V_STRIDE0 + kv_head * V_STRIDE2 + slot * V_STRIDE1
++        off_v = tn[:, None] * V_STRIDE1 + kd[None, :]
++        if kv_valid == KV_TILE:
++            v0 = gl.load(vb + off_v).to(MMA_DT)
++            v1 = gl.load(vb + 128 + off_v).to(MMA_DT)
++        else:
++            v0 = gl.load(vb + off_v, mask=valid_t[:, None], other=0).to(MMA_DT)
++            v1 = gl.load(vb + 128 + off_v, mask=valid_t[:, None], other=0).to(MMA_DT)
++        v0 = gl.convert_layout(v0, gl.DotOperandLayout(1, mma, k_width=4))
++        v1 = gl.convert_layout(v1, gl.DotOperandLayout(1, mma, k_width=4))
++        sptr_v = SV + physical * S_STRIDE0 + kv_head * S_STRIDE2 + (slot + tn) * S_STRIDE1
++        if kv_valid == KV_TILE:
++            sv0 = gl.load(sptr_v).to(gl.float32)
++            sv1 = gl.load(sptr_v + 1).to(gl.float32)
++        else:
++            sv0 = gl.load(sptr_v, mask=valid_t, other=1.0).to(gl.float32)
++            sv1 = gl.load(sptr_v + 1, mask=valid_t, other=1.0).to(gl.float32)
++        sv0 = gl.convert_layout(sv0, gl.SliceLayout(0, mma))
++        sv1 = gl.convert_layout(sv1, gl.SliceLayout(0, mma))
++        p0 = gl.convert_layout((p * sv0[None, :]).to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        p1 = gl.convert_layout((p * sv1[None, :]).to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        acc0 = gl.amd.cdna3.mfma(p0, v0, acc0)
++        acc1 = gl.amd.cdna3.mfma(p1, v1, acc1)
++
++    acc0 = gl.convert_layout(acc0, out_layout)
++    acc1 = gl.convert_layout(acc1, out_layout)
++    om = gl.arange(0, Q_ROWS, layout=gl.SliceLayout(1, out_layout))
++    od = gl.arange(0, 128, layout=gl.SliceLayout(0, out_layout))
++    opos = local_block * Q_TOKENS + om // NQ_PER_KV
++    ohead = kv_head * NQ_PER_KV + om % NQ_PER_KV
++    ovalid = (opos < q_len) & (ohead < NUM_QHEADS) & (om < Q_TOKENS * NQ_PER_KV)
++    base = PARTIAL + (q_start + opos[:, None]) * (NUM_QHEADS * SPLITS * 256) + ohead[:, None] * (SPLITS * 256) + seg * 256 + od[None, :]
++    gl.store(base, acc0, mask=ovalid[:, None])
++    gl.store(base + 128, acc1, mask=ovalid[:, None])
++    moff = (q_start + score_qpos) * (NUM_QHEADS * SPLITS) + score_qhead * SPLITS + seg
++    gl.store(PMAX + moff, m, mask=score_qvalid)
++    gl.store(PSUM + moff, l, mask=score_qvalid)
+diff --git a/vllm/v1/attention/ops/gfx90a_g128_gluon_draft.py b/vllm/v1/attention/ops/gfx90a_g128_gluon_draft.py
+--- /dev/null
++++ b/vllm/v1/attention/ops/gfx90a_g128_gluon_draft.py
+@@ -0,0 +1,189 @@
++# SPDX-License-Identifier: Apache-2.0
++"""MI210 BF16/G128 DFlash2 TP1 sliding-window attention prototype."""
++
++from triton.experimental import gluon as g
++from triton.experimental.gluon import language as gl
++
++
++@g.jit
++def draft_g128_core(
++    Q,
++    K,
++    V,
++    SK,
++    SV,
++    BT,
++    SEQLENS,
++    CUQ,
++    PARTIAL,
++    PMAX,
++    PSUM,
++    SCALE: gl.constexpr,
++    WINDOW: gl.constexpr,
++    NUM_SEQS: gl.constexpr,
++    NUM_QHEADS: gl.constexpr,
++    NQ_PER_KV: gl.constexpr,
++    BLOCK_SIZE: gl.constexpr,
++    SPLITS: gl.constexpr,
++    BT_STRIDE: gl.constexpr,
++    Q_STRIDE0: gl.constexpr,
++    Q_STRIDE1: gl.constexpr,
++    K_STRIDE0: gl.constexpr,
++    K_STRIDE1: gl.constexpr,
++    K_STRIDE2: gl.constexpr,
++    V_STRIDE0: gl.constexpr,
++    V_STRIDE1: gl.constexpr,
++    V_STRIDE2: gl.constexpr,
++    S_STRIDE0: gl.constexpr,
++    S_STRIDE1: gl.constexpr,
++    S_STRIDE2: gl.constexpr,
++    MMA_DT: gl.constexpr,
++    MMA_FP16: gl.constexpr,
++    NUM_WARPS: gl.constexpr = 2,
++    MMA_WARPS_N: gl.constexpr = 1,
++):
++    block_id = gl.program_id(0)
++    kv_head = gl.program_id(1)
++    seg = gl.program_id(2)
++    seq = 0
++    for s in gl.static_range(NUM_SEQS):
++        start = gl.load(CUQ + s)
++        first_block = start // 8 + s
++        seq = gl.where(block_id >= first_block, s, seq)
++    q_start = gl.load(CUQ + seq)
++    q_end = gl.load(CUQ + seq + 1)
++    q_len = q_end - q_start
++    local_block = block_id - (q_start // 8 + seq)
++    if local_block * 8 >= q_len:
++        return
++    seq_len = gl.load(SEQLENS + seq)
++    context = seq_len - q_len
++
++    # Partition the active sliding window, including draft tokens to the
++    # right of an earlier noncausal query, across all split-K segments.
++    first_key = gl.maximum(context + local_block * 8 - WINDOW + 1, 0)
++    first_tile = first_key // 32
++    last_tile = (seq_len + 31) // 32
++    tiles_per_seg = (last_tile - first_tile + SPLITS - 1) // SPLITS
++    lo = first_tile + seg * tiles_per_seg
++    hi = gl.minimum(lo + tiles_per_seg, last_tile)
++
++    q_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 8], threads_per_warp=[4, 16],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    kv_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 8], threads_per_warp=[4, 16],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    if MMA_FP16:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
++        )
++    else:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
++        )
++    out_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 2], threads_per_warp=[16, 4],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    qm = gl.arange(0, 32, layout=gl.SliceLayout(1, q_layout))
++    qd = gl.arange(0, 128, layout=gl.SliceLayout(0, q_layout))
++    qpos = local_block * 8 + qm // NQ_PER_KV
++    qhead = kv_head * NQ_PER_KV + qm % NQ_PER_KV
++    qvalid = (qpos < q_len) & (qhead < NUM_QHEADS)
++    qptr = (
++        Q + (q_start + qpos[:, None]) * Q_STRIDE0
++        + qhead[:, None] * Q_STRIDE1 + qd[None, :]
++    )
++    q = gl.load(qptr, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    q = gl.convert_layout(q, gl.DotOperandLayout(0, mma, k_width=2))
++
++    score_rows = gl.arange(0, 32, layout=gl.SliceLayout(1, mma))
++    score_cols = gl.arange(0, 32, layout=gl.SliceLayout(0, mma))
++    score_qpos = local_block * 8 + score_rows // NQ_PER_KV
++    score_qhead = kv_head * NQ_PER_KV + score_rows % NQ_PER_KV
++    score_qvalid = (score_qpos < q_len) & (score_qhead < NUM_QHEADS)
++    m = gl.full((32,), float('-inf'), gl.float32, layout=gl.SliceLayout(1, mma))
++    l = gl.full((32,), 1.0, gl.float32, layout=gl.SliceLayout(1, mma))
++    acc = gl.full((32, 128), 0.0, gl.float32, layout=mma)
++
++    tn = gl.arange(0, 32, layout=gl.SliceLayout(1, kv_layout))
++    kd = gl.arange(0, 128, layout=gl.SliceLayout(0, kv_layout))
++    for j in range(lo, hi):
++        slot = (j * 32) % BLOCK_SIZE
++        # Widen before multiplying: the KV arena can exceed 2 GiB even
++        # though its block IDs fit in int32.
++        physical = gl.load(
++            BT + seq * BT_STRIDE + (j * 32) // BLOCK_SIZE
++        ).to(gl.int64)
++        kv_valid = gl.minimum(32, seq_len - j * 32)
++        valid_t = tn < kv_valid
++        kb = K + physical * K_STRIDE0 + kv_head * K_STRIDE2 + slot * K_STRIDE1
++        vb = V + physical * V_STRIDE0 + kv_head * V_STRIDE2 + slot * V_STRIDE1
++        off_k = tn[:, None] * K_STRIDE1 + kd[None, :]
++        off_v = tn[:, None] * V_STRIDE1 + kd[None, :]
++        sptr_k = (
++            SK + physical * S_STRIDE0 + kv_head * S_STRIDE2
++            + (slot + tn) * S_STRIDE1
++        )
++        sptr_v = (
++            SV + physical * S_STRIDE0 + kv_head * S_STRIDE2
++            + (slot + tn) * S_STRIDE1
++        )
++        if kv_valid == 32:
++            k = gl.load(kb + off_k)
++            v = gl.load(vb + off_v)
++            sk = gl.load(sptr_k).to(gl.float32)
++            sv = gl.load(sptr_v).to(gl.float32)
++        else:
++            k = gl.load(kb + off_k, mask=valid_t[:, None], other=0)
++            v = gl.load(vb + off_v, mask=valid_t[:, None], other=0)
++            sk = gl.load(sptr_k, mask=valid_t, other=1.0).to(gl.float32)
++            sv = gl.load(sptr_v, mask=valid_t, other=1.0).to(gl.float32)
++        # Dequantize before MFMA to match the generic draft path's BF16
++        # rounding at the K and V interfaces.
++        k = (k.to(gl.float32) * sk[:, None]).to(MMA_DT)
++        v = (v.to(gl.float32) * sv[:, None]).to(MMA_DT)
++        k = gl.convert_layout(
++            gl.permute(k, (1, 0)), gl.DotOperandLayout(1, mma, k_width=2)
++        )
++        v = gl.convert_layout(v, gl.DotOperandLayout(1, mma, k_width=4))
++        scores = gl.full((32, 32), 0.0, gl.float32, layout=mma)
++        scores = gl.amd.cdna3.mfma(q, k, scores) * SCALE
++        kvpos = j * 32 + score_cols
++        dist = context + score_qpos[:, None] - kvpos[None, :]
++        mask = (
++            score_qvalid[:, None]
++            & (kvpos[None, :] < seq_len)
++            & (dist < WINDOW)
++            & (dist > -WINDOW)
++        )
++        scores = gl.where(mask, scores, float('-inf'))
++        m_new = gl.maximum(m, gl.max(scores, axis=1))
++        m_new = gl.where(m_new > float('-inf'), m_new, 0.0)
++        p = gl.exp(scores - m_new[:, None])
++        alpha = gl.exp(m - m_new)
++        l = l * alpha + gl.sum(p, axis=1)
++        m = m_new
++        acc = acc * alpha[:, None]
++        p = gl.convert_layout(p.to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        acc = gl.amd.cdna3.mfma(p, v, acc)
++
++    acc = gl.convert_layout(acc, out_layout)
++    om = gl.arange(0, 32, layout=gl.SliceLayout(1, out_layout))
++    od = gl.arange(0, 128, layout=gl.SliceLayout(0, out_layout))
++    opos = local_block * 8 + om // NQ_PER_KV
++    ohead = kv_head * NQ_PER_KV + om % NQ_PER_KV
++    ovalid = (opos < q_len) & (ohead < NUM_QHEADS)
++    base = (
++        PARTIAL + (q_start + opos[:, None]) * (NUM_QHEADS * SPLITS * 128)
++        + ohead[:, None] * (SPLITS * 128) + seg * 128 + od[None, :]
++    )
++    gl.store(base, acc, mask=ovalid[:, None])
++    moff = (q_start + score_qpos) * (NUM_QHEADS * SPLITS) + score_qhead * SPLITS + seg
++    gl.store(PMAX + moff, m, mask=score_qvalid)
++    gl.store(PSUM + moff, l, mask=score_qvalid)
+diff --git a/vllm/v1/attention/ops/gfx90a_g128_gluon_prefill.py b/vllm/v1/attention/ops/gfx90a_g128_gluon_prefill.py
+--- /dev/null
++++ b/vllm/v1/attention/ops/gfx90a_g128_gluon_prefill.py
+@@ -0,0 +1,244 @@
++# SPDX-License-Identifier: Apache-2.0
++"""gfx90a grouped-int8 G128 MFMA prefill core (GOALOPT).
++
++Same packed-KV format, group-scale math and per-tile flash update as the
++validated 64-row decode core (gfx90a_g128_gluon_decode), tiled for prefill:
++each CTA owns 64 consecutive query tokens of ONE query head and walks the
++full causal key range. No split-K (prefill grids are already wide).
++"""
++
++from triton.experimental import gluon as g
++from triton.experimental.gluon import language as gl
++
++
++@g.jit
++def g128_prefill_core_cdna2(
++    Q,
++    K,
++    V,
++    SK,
++    SV,
++    BT,
++    SEQLENS,
++    CUQ,
++    OUT,
++    SCALE: gl.constexpr,
++    NUM_SEQS: gl.constexpr,
++    NUM_QHEADS: gl.constexpr,
++    NQ_PER_KV: gl.constexpr,
++    BLOCK_SIZE: gl.constexpr,
++    BT_STRIDE: gl.constexpr,
++    Q_STRIDE0: gl.constexpr,
++    Q_STRIDE1: gl.constexpr,
++    K_STRIDE0: gl.constexpr,
++    K_STRIDE1: gl.constexpr,
++    K_STRIDE2: gl.constexpr,
++    V_STRIDE0: gl.constexpr,
++    V_STRIDE1: gl.constexpr,
++    V_STRIDE2: gl.constexpr,
++    S_STRIDE0: gl.constexpr,
++    S_STRIDE1: gl.constexpr,
++    S_STRIDE2: gl.constexpr,
++    OUT_STRIDE0: gl.constexpr,
++    OUT_STRIDE1: gl.constexpr,
++    MMA_DT: gl.constexpr,
++    MMA_FP16: gl.constexpr,
++    WIDE_KV: gl.constexpr,
++    KV_TILE: gl.constexpr = 32,
++):
++    block_id = gl.program_id(0)
++    qhead = gl.program_id(1)
++    kv_head = qhead // NQ_PER_KV
++    # Map block_id -> (seq, local 64-token block). Blocks per sequence are
++    # ceil(q_len / 64); first pass finds the owning seq (grid may be an
++    # upper bound, so seq is clamped and over-tail blocks early-return),
++    # second pass recomputes that seq's first block index.
++    seq = 0
++    acc = 0
++    for s in gl.static_range(NUM_SEQS):
++        s_start = gl.load(CUQ + s)
++        s_end = gl.load(CUQ + s + 1)
++        s_blks = (s_end - s_start + 63) // 64
++        sel = block_id >= acc + s_blks
++        seq = gl.where(sel, s + 1, seq)
++        acc = acc + s_blks
++    seq = gl.minimum(seq, NUM_SEQS - 1)
++    my_first = 0
++    for s in gl.static_range(NUM_SEQS - 1):
++        s_start = gl.load(CUQ + s)
++        s_end = gl.load(CUQ + s + 1)
++        my_first = gl.where(
++            s < seq, my_first + (s_end - s_start + 63) // 64, my_first
++        )
++    q_start = gl.load(CUQ + seq)
++    q_end = gl.load(CUQ + seq + 1)
++    q_len = q_end - q_start
++    local_block = block_id - my_first
++    if local_block * 64 >= q_len:
++        return
++    seq_len = gl.load(SEQLENS + seq)
++    context = seq_len - q_len
++    max_prefix = gl.minimum(context + local_block * 64 + 64, seq_len)
++    hi = (max_prefix + KV_TILE - 1) // KV_TILE
++
++    q_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 8], threads_per_warp=[4, 16],
++        warps_per_cta=[4, 1], order=[1, 0]
++    )
++    # CDNA2 uses native K=16 for both FP16 and BF16 MFMA.
++    # Preserve BF16 operands for the PTQR long-context serving contract.
++    if MMA_FP16:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[4, 1]
++        )
++    else:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[4, 1]
++        )
++    out_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 2], threads_per_warp=[16, 4],
++        warps_per_cta=[4, 1], order=[1, 0]
++    )
++    qm = gl.arange(0, 64, layout=gl.SliceLayout(1, q_layout))
++    qd = gl.arange(0, 128, layout=gl.SliceLayout(0, q_layout))
++    qpos = local_block * 64 + qm
++    qvalid = qpos < q_len
++    qptr = Q + (q_start + qpos[:, None]) * Q_STRIDE0 + qhead * Q_STRIDE1 + qd[None, :]
++    q0 = gl.load(qptr, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    q1 = gl.load(qptr + 128, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    if WIDE_KV:
++        # GOALOPT wide-KV: K/V loads run through int32 lanes (128-bit
++        # loads) and the nested-join unpack restores the original
++        # interleaved column order, so Q loads normally.
++        pass
++    q0 = gl.convert_layout(q0, gl.DotOperandLayout(0, mma, k_width=2))
++    q1 = gl.convert_layout(q1, gl.DotOperandLayout(0, mma, k_width=2))
++
++    score_rows = gl.arange(0, 64, layout=gl.SliceLayout(1, mma))
++    score_cols = gl.arange(0, KV_TILE, layout=gl.SliceLayout(0, mma))
++    score_qpos = local_block * 64 + score_rows
++    score_qvalid = score_qpos < q_len
++    m = gl.full((64,), float('-inf'), gl.float32, layout=gl.SliceLayout(1, mma))
++    l = gl.full((64,), 1.0, gl.float32, layout=gl.SliceLayout(1, mma))
++    acc0 = gl.full((64, 128), 0.0, gl.float32, layout=mma)
++    acc1 = gl.full((64, 128), 0.0, gl.float32, layout=mma)
++
++    tn = gl.arange(0, KV_TILE, layout=gl.SliceLayout(1, q_layout))
++    kd = gl.arange(0, 128, layout=gl.SliceLayout(0, q_layout))
++    # wide-KV helpers: 32 int32 lanes cover 128 int8 columns per half.
++    tw = gl.arange(0, KV_TILE, layout=gl.SliceLayout(1, q_layout))
++    kq = gl.arange(0, 32, layout=gl.SliceLayout(0, q_layout))
++    for j in range(0, hi):
++        slot = (j * KV_TILE) % BLOCK_SIZE
++        # Widen before multiplying: the KV arena can exceed 2 GiB even
++        # though its block IDs fit in int32.
++        physical = gl.load(
++            BT + seq * BT_STRIDE + (j * KV_TILE) // BLOCK_SIZE
++        ).to(gl.int64)
++        kv_valid = gl.minimum(KV_TILE, max_prefix - j * KV_TILE)
++        valid_t = tn < kv_valid
++        kb = K + physical * K_STRIDE0 + kv_head * K_STRIDE2 + slot * K_STRIDE1
++        if WIDE_KV:
++            kb32 = kb.to(gl.pointer_type(gl.int32))
++            off_w = tw[:, None] * (K_STRIDE1 // 4) + kq[None, :]
++            vw = tw < kv_valid
++            if kv_valid == KV_TILE:
++                w0 = gl.load(kb32 + off_w)
++                w1 = gl.load(kb32 + off_w + 32)
++            else:
++                w0 = gl.load(kb32 + off_w, mask=vw[:, None], other=0)
++                w1 = gl.load(kb32 + off_w + 32, mask=vw[:, None], other=0)
++            # Byte extraction per word; nested join produces [w, byte-in-pair,
++            # pair] whose flatten order is b0[w],b1[w],b2[w],b3[w],b0[w+1],...
++            # = the ORIGINAL interleaved column order - no Q permutation
++            # needed (the Q pointer permutation above is then inactive but
++            # harmless: with interleaved K, qperm must be identity; it is
++            # kept only when the plane order is in effect).
++            b00 = (w0 & 0xFF).to(gl.int8)
++            b01 = ((w0 >> 8) & 0xFF).to(gl.int8)
++            b02 = ((w0 >> 16) & 0xFF).to(gl.int8)
++            b03 = ((w0 >> 24) & 0xFF).to(gl.int8)
++            k0 = gl.reshape(
++                gl.join(gl.join(b00, b02), gl.join(b01, b03)),
++                (KV_TILE, 128),
++            ).to(MMA_DT)
++            b10 = (w1 & 0xFF).to(gl.int8)
++            b11 = ((w1 >> 8) & 0xFF).to(gl.int8)
++            b12 = ((w1 >> 16) & 0xFF).to(gl.int8)
++            b13 = ((w1 >> 24) & 0xFF).to(gl.int8)
++            k1 = gl.reshape(
++                gl.join(gl.join(b10, b12), gl.join(b11, b13)),
++                (KV_TILE, 128),
++            ).to(MMA_DT)
++        else:
++            off_k = tn[:, None] * K_STRIDE1 + kd[None, :]
++            if kv_valid == KV_TILE:
++                k0 = gl.load(kb + off_k).to(MMA_DT)
++                k1 = gl.load(kb + 128 + off_k).to(MMA_DT)
++            else:
++                k0 = gl.load(kb + off_k, mask=valid_t[:, None], other=0).to(MMA_DT)
++                k1 = gl.load(kb + 128 + off_k, mask=valid_t[:, None], other=0).to(MMA_DT)
++        k0 = gl.convert_layout(gl.permute(k0, (1, 0)), gl.DotOperandLayout(1, mma, k_width=2))
++        k1 = gl.convert_layout(gl.permute(k1, (1, 0)), gl.DotOperandLayout(1, mma, k_width=2))
++        sptr_k = SK + physical * S_STRIDE0 + kv_head * S_STRIDE2 + (slot + tn) * S_STRIDE1
++        if kv_valid == KV_TILE:
++            sk0 = gl.load(sptr_k).to(gl.float32)
++            sk1 = gl.load(sptr_k + 1).to(gl.float32)
++        else:
++            sk0 = gl.load(sptr_k, mask=valid_t, other=1.0).to(gl.float32)
++            sk1 = gl.load(sptr_k + 1, mask=valid_t, other=1.0).to(gl.float32)
++        sk0 = gl.convert_layout(sk0, gl.SliceLayout(0, mma))
++        sk1 = gl.convert_layout(sk1, gl.SliceLayout(0, mma))
++        score0 = gl.full((64, KV_TILE), 0.0, gl.float32, layout=mma)
++        score1 = gl.full((64, KV_TILE), 0.0, gl.float32, layout=mma)
++        score0 = gl.amd.cdna3.mfma(q0, k0, score0)
++        score1 = gl.amd.cdna3.mfma(q1, k1, score1)
++        scores = score0 * (SCALE * sk0[None, :]) + score1 * (SCALE * sk1[None, :])
++        kvpos = j * KV_TILE + score_cols
++        mask = score_qvalid[:, None] & (kvpos[None, :] <= context + score_qpos[:, None])
++        scores = gl.where(mask, scores, float('-inf'))
++        m_new = gl.maximum(m, gl.max(scores, axis=1))
++        m_new = gl.where(m_new > float('-inf'), m_new, 0.0)
++        p = gl.exp(scores - m_new[:, None])
++        alpha = gl.exp(m - m_new)
++        l = l * alpha + gl.sum(p, axis=1)
++        m = m_new
++        acc0 = acc0 * alpha[:, None]
++        acc1 = acc1 * alpha[:, None]
++        vb = V + physical * V_STRIDE0 + kv_head * V_STRIDE2 + slot * V_STRIDE1
++        off_v = tn[:, None] * V_STRIDE1 + kd[None, :]
++        if kv_valid == KV_TILE:
++            v0 = gl.load(vb + off_v).to(MMA_DT)
++            v1 = gl.load(vb + 128 + off_v).to(MMA_DT)
++        else:
++            v0 = gl.load(vb + off_v, mask=valid_t[:, None], other=0).to(MMA_DT)
++            v1 = gl.load(vb + 128 + off_v, mask=valid_t[:, None], other=0).to(MMA_DT)
++        v0 = gl.convert_layout(v0, gl.DotOperandLayout(1, mma, k_width=4))
++        v1 = gl.convert_layout(v1, gl.DotOperandLayout(1, mma, k_width=4))
++        sptr_v = SV + physical * S_STRIDE0 + kv_head * S_STRIDE2 + (slot + tn) * S_STRIDE1
++        if kv_valid == KV_TILE:
++            sv0 = gl.load(sptr_v).to(gl.float32)
++            sv1 = gl.load(sptr_v + 1).to(gl.float32)
++        else:
++            sv0 = gl.load(sptr_v, mask=valid_t, other=1.0).to(gl.float32)
++            sv1 = gl.load(sptr_v + 1, mask=valid_t, other=1.0).to(gl.float32)
++        sv0 = gl.convert_layout(sv0, gl.SliceLayout(0, mma))
++        sv1 = gl.convert_layout(sv1, gl.SliceLayout(0, mma))
++        p0 = gl.convert_layout((p * sv0[None, :]).to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        p1 = gl.convert_layout((p * sv1[None, :]).to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        acc0 = gl.amd.cdna3.mfma(p0, v0, acc0)
++        acc1 = gl.amd.cdna3.mfma(p1, v1, acc1)
++
++    acc0 = gl.convert_layout(acc0, out_layout)
++    acc1 = gl.convert_layout(acc1, out_layout)
++    l_out = gl.convert_layout(l, gl.SliceLayout(1, out_layout))
++    om = gl.arange(0, 64, layout=gl.SliceLayout(1, out_layout))
++    od = gl.arange(0, 128, layout=gl.SliceLayout(0, out_layout))
++    opos = local_block * 64 + om
++    ovalid = opos < q_len
++    base = OUT + (q_start + opos[:, None]) * OUT_STRIDE0 + qhead * OUT_STRIDE1 + od[None, :]
++    inv_l = 1.0 / l_out
++    gl.store(base, acc0 * inv_l[:, None], mask=ovalid[:, None])
++    gl.store(base + 128, acc1 * inv_l[:, None], mask=ovalid[:, None])
+diff --git a/vllm/v1/attention/ops/gfx90a_g128_gluon_qkpv.py b/vllm/v1/attention/ops/gfx90a_g128_gluon_qkpv.py
+--- /dev/null
++++ b/vllm/v1/attention/ops/gfx90a_g128_gluon_qkpv.py
+@@ -0,0 +1,230 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Experimental sequential QK/PV core; serving validation is pending.
++
++The query5, two-wave, KV-vector4 configuration preserves the measured decode
++core's arithmetic order while shortening temporary lifetimes. Keep opt-in.
++"""
++
++from triton.experimental import gluon as g
++from triton.experimental.gluon import language as gl
++
++
++@g.jit
++def g128_core_cdna2(
++    Q,
++    K,
++    V,
++    SK,
++    SV,
++    BT,
++    SEQLENS,
++    CUQ,
++    PARTIAL,
++    PMAX,
++    PSUM,
++    SCALE: gl.constexpr,
++    NUM_SEQS: gl.constexpr,
++    NUM_QHEADS: gl.constexpr,
++    NQ_PER_KV: gl.constexpr,
++    BLOCK_SIZE: gl.constexpr,
++    SPLITS: gl.constexpr,
++    BT_STRIDE: gl.constexpr,
++    Q_STRIDE0: gl.constexpr,
++    Q_STRIDE1: gl.constexpr,
++    K_STRIDE0: gl.constexpr,
++    K_STRIDE1: gl.constexpr,
++    K_STRIDE2: gl.constexpr,
++    V_STRIDE0: gl.constexpr,
++    V_STRIDE1: gl.constexpr,
++    V_STRIDE2: gl.constexpr,
++    S_STRIDE0: gl.constexpr,
++    S_STRIDE1: gl.constexpr,
++    S_STRIDE2: gl.constexpr,
++    MMA_DT: gl.constexpr,
++    MMA_FP16: gl.constexpr,
++    KV_TILE: gl.constexpr = 32,
++    Q_ROWS: gl.constexpr = 64,
++    Q_TOKENS: gl.constexpr = 10,
++    QK_INT8: gl.constexpr = False,
++    NUM_WARPS: gl.constexpr = 4,
++    MMA_WARPS_N: gl.constexpr = 1,
++    KV_VECTOR: gl.constexpr = 4,
++):
++    gl.static_assert(Q_TOKENS * NQ_PER_KV <= Q_ROWS)
++    gl.static_assert(NUM_WARPS == 2 or NUM_WARPS == 4)
++    gl.static_assert(NUM_WARPS % MMA_WARPS_N == 0)
++    block_id = gl.program_id(0)
++    kv_head = gl.program_id(1)
++    seg = gl.program_id(2)
++    seq = 0
++    for s in gl.static_range(NUM_SEQS):
++        start = gl.load(CUQ + s)
++        first_block = start // Q_TOKENS + s
++        seq = gl.where(block_id >= first_block, s, seq)
++    q_start = gl.load(CUQ + seq)
++    q_end = gl.load(CUQ + seq + 1)
++    q_len = q_end - q_start
++    local_block = block_id - (q_start // Q_TOKENS + seq)
++    if local_block * Q_TOKENS >= q_len:
++        return
++    seq_len = gl.load(SEQLENS + seq)
++    context = seq_len - q_len
++    tiles_per_seg = (seq_len + SPLITS * KV_TILE - 1) // (SPLITS * KV_TILE)
++    lo = seg * tiles_per_seg
++    if lo * KV_TILE >= seq_len:
++        return
++    # The causal mask below excludes the conservative extra key in this bound.
++    max_prefix = gl.minimum(context + local_block * Q_TOKENS + Q_TOKENS + 1, seq_len)
++    hi = gl.minimum((seg + 1) * tiles_per_seg, (max_prefix + KV_TILE - 1) // KV_TILE)
++
++    q_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 8], threads_per_warp=[4, 16],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    kv_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, KV_VECTOR], threads_per_warp=[4, 16],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    if MMA_FP16:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
++        )
++    else:
++        mma: gl.constexpr = gl.amd.AMDMFMALayout(
++            version=2, instr_shape=[16, 16, 16],
++            transposed=True, warps_per_cta=[NUM_WARPS // MMA_WARPS_N, MMA_WARPS_N]
++        )
++    out_layout: gl.constexpr = gl.BlockedLayout(
++        size_per_thread=[1, 2], threads_per_warp=[16, 4],
++        warps_per_cta=[NUM_WARPS, 1], order=[1, 0]
++    )
++    qm = gl.arange(0, Q_ROWS, layout=gl.SliceLayout(1, q_layout))
++    qd = gl.arange(0, 128, layout=gl.SliceLayout(0, q_layout))
++    qpos = local_block * Q_TOKENS + qm // NQ_PER_KV
++    qhead = kv_head * NQ_PER_KV + qm % NQ_PER_KV
++    qvalid = (qpos < q_len) & (qhead < NUM_QHEADS) & (qm < Q_TOKENS * NQ_PER_KV)
++    qptr = Q + (q_start + qpos[:, None]) * Q_STRIDE0 + qhead[:, None] * Q_STRIDE1 + qd[None, :]
++    q0 = gl.load(qptr, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    q1 = gl.load(qptr + 128, mask=qvalid[:, None], other=0.0).to(MMA_DT)
++    if QK_INT8:
++        # Separate query scales match the existing two 128-element KV groups.
++        # PV keeps its BF16/FP16 MFMA path and FP32 softmax accumulation.
++        qs0 = gl.maximum(gl.max(gl.abs(q0.to(gl.float32)), axis=1) / 127.0, 1.0e-6)
++        qs1 = gl.maximum(gl.max(gl.abs(q1.to(gl.float32)), axis=1) / 127.0, 1.0e-6)
++        qr0 = q0.to(gl.float32) / qs0[:, None]
++        qr1 = q1.to(gl.float32) / qs1[:, None]
++        q0 = (qr0 + gl.where(qr0 >= 0, 0.5, -0.5)).to(gl.int8)
++        q1 = (qr1 + gl.where(qr1 >= 0, 0.5, -0.5)).to(gl.int8)
++        qs0 = gl.convert_layout(qs0, gl.SliceLayout(1, mma))
++        qs1 = gl.convert_layout(qs1, gl.SliceLayout(1, mma))
++    QK_WIDTH: gl.constexpr = 4 if QK_INT8 else 2
++    K_DTYPE: gl.constexpr = gl.int8 if QK_INT8 else MMA_DT
++    q0 = gl.convert_layout(q0, gl.DotOperandLayout(0, mma, k_width=QK_WIDTH))
++    q1 = gl.convert_layout(q1, gl.DotOperandLayout(0, mma, k_width=QK_WIDTH))
++
++    score_rows = gl.arange(0, Q_ROWS, layout=gl.SliceLayout(1, mma))
++    score_cols = gl.arange(0, KV_TILE, layout=gl.SliceLayout(0, mma))
++    score_qpos = local_block * Q_TOKENS + score_rows // NQ_PER_KV
++    score_qhead = kv_head * NQ_PER_KV + score_rows % NQ_PER_KV
++    score_qvalid = ((score_qpos < q_len) & (score_qhead < NUM_QHEADS)
++                    & (score_rows < Q_TOKENS * NQ_PER_KV))
++    m = gl.full((Q_ROWS,), float('-inf'), gl.float32, layout=gl.SliceLayout(1, mma))
++    l = gl.full((Q_ROWS,), 1.0, gl.float32, layout=gl.SliceLayout(1, mma))
++    acc0 = gl.full((Q_ROWS, 128), 0.0, gl.float32, layout=mma)
++    acc1 = gl.full((Q_ROWS, 128), 0.0, gl.float32, layout=mma)
++
++    tn = gl.arange(0, KV_TILE, layout=gl.SliceLayout(1, kv_layout))
++    kd = gl.arange(0, 128, layout=gl.SliceLayout(0, kv_layout))
++    for j in range(lo, hi):
++        slot = (j * KV_TILE) % BLOCK_SIZE
++        # Widen before multiplying: the KV arena can exceed 2 GiB even
++        # though its block IDs fit in int32.
++        physical = gl.load(
++            BT + seq * BT_STRIDE + (j * KV_TILE) // BLOCK_SIZE
++        ).to(gl.int64)
++        kv_valid = gl.minimum(KV_TILE, max_prefix - j * KV_TILE)
++        valid_t = tn < kv_valid
++        kb = K + physical * K_STRIDE0 + kv_head * K_STRIDE2 + slot * K_STRIDE1
++        off_k = tn[:, None] * K_STRIDE1 + kd[None, :]
++        sptr_k = SK + physical * S_STRIDE0 + kv_head * S_STRIDE2 + (slot + tn) * S_STRIDE1
++        SCORE_DTYPE: gl.constexpr = gl.int32 if QK_INT8 else gl.float32
++        if kv_valid == KV_TILE:
++            k0 = gl.load(kb + off_k).to(K_DTYPE)
++            sk0 = gl.load(sptr_k).to(gl.float32)
++        else:
++            k0 = gl.load(kb + off_k, mask=valid_t[:, None], other=0).to(K_DTYPE)
++            sk0 = gl.load(sptr_k, mask=valid_t, other=1.0).to(gl.float32)
++        k0 = gl.convert_layout(gl.permute(k0, (1, 0)), gl.DotOperandLayout(1, mma, k_width=QK_WIDTH))
++        sk0 = gl.convert_layout(sk0, gl.SliceLayout(0, mma))
++        score0 = gl.full((Q_ROWS, KV_TILE), 0, SCORE_DTYPE, layout=mma)
++        score0 = gl.amd.cdna3.mfma(q0, k0, score0)
++        if QK_INT8:
++            score0 = score0.to(gl.float32) * (SCALE * sk0[None, :]) * qs0[:, None]
++        else:
++            score0 = score0 * (SCALE * sk0[None, :])
++        if kv_valid == KV_TILE:
++            k1 = gl.load(kb + 128 + off_k).to(K_DTYPE)
++            sk1 = gl.load(sptr_k + 1).to(gl.float32)
++        else:
++            k1 = gl.load(kb + 128 + off_k, mask=valid_t[:, None], other=0).to(K_DTYPE)
++            sk1 = gl.load(sptr_k + 1, mask=valid_t, other=1.0).to(gl.float32)
++        k1 = gl.convert_layout(gl.permute(k1, (1, 0)), gl.DotOperandLayout(1, mma, k_width=QK_WIDTH))
++        sk1 = gl.convert_layout(sk1, gl.SliceLayout(0, mma))
++        score1 = gl.full((Q_ROWS, KV_TILE), 0, SCORE_DTYPE, layout=mma)
++        score1 = gl.amd.cdna3.mfma(q1, k1, score1)
++        if QK_INT8:
++            score1 = score1.to(gl.float32) * (SCALE * sk1[None, :]) * qs1[:, None]
++        else:
++            score1 = score1 * (SCALE * sk1[None, :])
++        scores = score0 + score1
++        kvpos = j * KV_TILE + score_cols
++        mask = score_qvalid[:, None] & (kvpos[None, :] < max_prefix) & (kvpos[None, :] <= context + score_qpos[:, None])
++        scores = gl.where(mask, scores, float('-inf'))
++        m_new = gl.maximum(m, gl.max(scores, axis=1))
++        m_new = gl.where(m_new > float('-inf'), m_new, 0.0)
++        p = gl.exp(scores - m_new[:, None])
++        alpha = gl.exp(m - m_new)
++        l = l * alpha + gl.sum(p, axis=1)
++        m = m_new
++        acc0 = acc0 * alpha[:, None]
++        acc1 = acc1 * alpha[:, None]
++        vb = V + physical * V_STRIDE0 + kv_head * V_STRIDE2 + slot * V_STRIDE1
++        off_v = tn[:, None] * V_STRIDE1 + kd[None, :]
++        sptr_v = SV + physical * S_STRIDE0 + kv_head * S_STRIDE2 + (slot + tn) * S_STRIDE1
++        # Process one independent 128-element PV group at a time. Preserve
++        # the original MFMA/reduction order while reducing live operands.
++        if kv_valid == KV_TILE:
++            v0 = gl.load(vb + off_v).to(MMA_DT)
++            sv0 = gl.load(sptr_v).to(gl.float32)
++        else:
++            v0 = gl.load(vb + off_v, mask=valid_t[:, None], other=0).to(MMA_DT)
++            sv0 = gl.load(sptr_v, mask=valid_t, other=1.0).to(gl.float32)
++        v0 = gl.convert_layout(v0, gl.DotOperandLayout(1, mma, k_width=4))
++        sv0 = gl.convert_layout(sv0, gl.SliceLayout(0, mma))
++        p0 = gl.convert_layout((p * sv0[None, :]).to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        acc0 = gl.amd.cdna3.mfma(p0, v0, acc0)
++        if kv_valid == KV_TILE:
++            v1 = gl.load(vb + 128 + off_v).to(MMA_DT)
++            sv1 = gl.load(sptr_v + 1).to(gl.float32)
++        else:
++            v1 = gl.load(vb + 128 + off_v, mask=valid_t[:, None], other=0).to(MMA_DT)
++            sv1 = gl.load(sptr_v + 1, mask=valid_t, other=1.0).to(gl.float32)
++        v1 = gl.convert_layout(v1, gl.DotOperandLayout(1, mma, k_width=4))
++        sv1 = gl.convert_layout(sv1, gl.SliceLayout(0, mma))
++        p1 = gl.convert_layout((p * sv1[None, :]).to(MMA_DT), gl.DotOperandLayout(0, mma, k_width=4))
++        acc1 = gl.amd.cdna3.mfma(p1, v1, acc1)
++
++    acc0 = gl.convert_layout(acc0, out_layout)
++    acc1 = gl.convert_layout(acc1, out_layout)
++    om = gl.arange(0, Q_ROWS, layout=gl.SliceLayout(1, out_layout))
++    od = gl.arange(0, 128, layout=gl.SliceLayout(0, out_layout))
++    opos = local_block * Q_TOKENS + om // NQ_PER_KV
++    ohead = kv_head * NQ_PER_KV + om % NQ_PER_KV
++    ovalid = (opos < q_len) & (ohead < NUM_QHEADS) & (om < Q_TOKENS * NQ_PER_KV)
++    base = PARTIAL + (q_start + opos[:, None]) * (NUM_QHEADS * SPLITS * 256) + ohead[:, None] * (SPLITS * 256) + seg * 256 + od[None, :]
++    gl.store(base, acc0, mask=ovalid[:, None])
++    gl.store(base + 128, acc1, mask=ovalid[:, None])
++    moff = (q_start + score_qpos) * (NUM_QHEADS * SPLITS) + score_qhead * SPLITS + seg
++    gl.store(PMAX + moff, m, mask=score_qvalid)
++    gl.store(PSUM + moff, l, mask=score_qvalid)
+diff --git a/vllm/v1/attention/ops/mi210_split_tuning.py b/vllm/v1/attention/ops/mi210_split_tuning.py
+--- /dev/null
++++ b/vllm/v1/attention/ops/mi210_split_tuning.py
+@@ -0,0 +1,20 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Opt-in fixed split count for MI210 target verification experiments."""
++
++
++def validate_mi210_splits(value: str, capacity: int) -> int:
++    if value not in {"8", "16", "32", "64"}:
++        raise ValueError("VLLM_MI210_FLASH_SPLITS must be 8, 16, 32 or 64")
++    splits = int(value)
++    if splits > capacity:
++        raise ValueError(
++            f"MI210 split count {splits} exceeds segment capacity {capacity}"
++        )
++    return splits
++
++
++def validate_mi210_query_tile(value: str) -> int:
++    """Native TP1 GQA6 tiles: 5 uses 32 rows, 10 uses 64, 16 uses 128."""
++    if value not in {"5", "10", "16"}:
++        raise ValueError("VLLM_MI210_G128_QUERY_TILE must be 5, 10 or 16")
++    return int(value)
+diff --git a/vllm/v1/attention/ops/triton_unified_attention.py b/vllm/v1/attention/ops/triton_unified_attention.py
+--- a/vllm/v1/attention/ops/triton_unified_attention.py
++++ b/vllm/v1/attention/ops/triton_unified_attention.py
+@@ -1383,6 +1383,37 @@
+     else:
+         actual_num_splits = num_par_softmax_segments if use_3d else 1
+ 
++    # Experimental target-only split count. Fixed during graph capture and
++    # replay; surplus segments are masked by the existing core and reducer.
++    # Keep draft SWA and default dispatch unchanged when the env is absent.
++    mi210_splits = os.environ.get("VLLM_MI210_FLASH_SPLITS")
++    if (
++        mi210_splits is not None
++        and use_3d
++        and use_g8
++        and kv_quant_mode == KVQuantMode.INT8_BLOCK_G128
++        and head_size == 256
++        and (num_kv_heads == 4 or (
++            num_kv_heads == 2
++            and os.environ.get("VLLM_MI210_TP2_CDNA2") == "1"
++        ))
++        and num_queries_per_kv == 6
++        and use_causal
++        and sliding_window_val == 0
++        and os.environ.get("VLLM_G128_DECODE_CDNA2") == "1"
++        and current_platform.is_rocm()
++    ):
++        from vllm.platforms.rocm import on_gfx90a
++        from vllm.v1.attention.ops.mi210_split_tuning import validate_mi210_splits
++
++        if on_gfx90a():
++            capacity = min(
++                softmax_segm_output.shape[2],
++                softmax_segm_max.shape[2],
++                softmax_segm_expsum.shape[2],
++            )
++            actual_num_splits = validate_mi210_splits(mi210_splits, capacity)
++
+     grid: tuple[Any, ...]
+     if not use_3d:
+         grid = (total_num_q_blocks, num_kv_heads)
+@@ -1397,19 +1428,25 @@
+     if launch_num_stages is not None:
+         launch_kwargs["num_stages"] = launch_num_stages
+ 
++    mi210_draft_mode = False
++    if (os.environ.get("VLLM_MI210_DRAFT_GLUON") == "1"
++            and current_platform.is_rocm()):
++        from vllm.platforms.rocm import on_gfx90a
++        mi210_draft_mode = on_gfx90a()
++
+     # DFlash2's noncausal sliding verify attends only to the tail window.
+     # Split that window across CTAs instead of scanning the full 32k prefix.
+     _draft_gluon_conds = (
+-        os.environ.get("VLLM_G128_DRAFT_GLUON") == "1",
++        os.environ.get("VLLM_G128_DRAFT_GLUON") == "1" or mi210_draft_mode,
+         use_3d,
+         use_g8,
+         kv_quant_mode == KVQuantMode.INT8_BLOCK_G128,
+         use_g8 and g8_k_scale.shape[-1] == 1,
+         head_size == 128,
+         num_queries_per_kv == 4,
+-        num_kv_heads == 2,
++        num_kv_heads == (8 if mi210_draft_mode else 2),
+         BLOCK_Q == 4,
+-        max_seqlen_q <= 8,
++        max_seqlen_q <= (16 if mi210_draft_mode else 8),
+         q.dtype == torch.bfloat16,
+         q.stride(2) == 1,
+         block_size % 32 == 0,
+@@ -1455,7 +1492,22 @@
+               f"seqs={num_seqs} fires={all(_draft_gluon_conds)} "
+               f"miss={_miss}", flush=True)
+     if all(_draft_gluon_conds):
+-        from vllm.v1.attention.ops.gfx908_g128_gluon_draft import draft_g128_core
++        draft_kwargs = {}
++        if mi210_draft_mode:
++            from vllm.v1.attention.ops.gfx90a_g128_gluon_draft import draft_g128_core
++            from vllm.v1.attention.ops.mi210_split_tuning import validate_mi210_splits
++            capacity = min(softmax_segm_output.shape[2], softmax_segm_max.shape[2],
++                           softmax_segm_expsum.shape[2])
++            actual_num_splits = validate_mi210_splits(
++                os.environ.get("VLLM_MI210_DRAFT_SPLITS", "16"), capacity)
++            draft_kwargs = dict(NUM_WARPS=4, MMA_WARPS_N=2)
++            if not globals().get("_MI210_DRAFT_REPORTED"):
++                print(f"[MI210-DRAFT] TP1 GQA4 BF16/G128 SWA enabled; "
++                      f"maxq={max_seqlen_q} window={sliding_window_val} "
++                      f"block={block_size} splits={actual_num_splits}", flush=True)
++                globals()["_MI210_DRAFT_REPORTED"] = True
++        else:
++            from vllm.v1.attention.ops.gfx908_g128_gluon_draft import draft_g128_core
+ 
+         # GOALOPT: fp16 MFMA at 2x the bf16 rate on gfx908. The draft core
+         # dequantizes K/V explicitly, so fp16 keeps the same exact values
+@@ -1463,7 +1515,8 @@
+         # scales; gates decide). VLLM_G128_DRAFT_GLUON_MMA: fp16 | bf16.
+         from triton.experimental.gluon import language as _gl
+ 
+-        _draft_mode = os.environ.get("VLLM_G128_DRAFT_GLUON_MMA", "fp16")
++        _draft_mode = ("bf16" if mi210_draft_mode else
++                       os.environ.get("VLLM_G128_DRAFT_GLUON_MMA", "fp16"))
+         _draft_dt = _gl.float16 if _draft_mode == "fp16" else _gl.bfloat16
+ 
+         draft_g128_core[(
+@@ -1496,6 +1549,7 @@
+             MMA_DT=_draft_dt,
+             MMA_FP16=(_draft_mode == "fp16"),
+             num_warps=4,
++            **draft_kwargs,
+         )
+         reduce_segments[(q.shape[0], num_query_heads)](
+             output_ptr=out,
+@@ -1522,6 +1576,11 @@
+     # Gfx908 grouped-int8 decode: reuse each vectorized KV tile across the
+     # verify query rows. Prefill and unsupported shapes use the general kernel.
+     g128_gluon_mode = os.environ.get("VLLM_G128_GLUON")
++    cdna2_decode_requested = False
++    if (os.environ.get("VLLM_G128_DECODE_CDNA2") == "1"
++            and current_platform.is_rocm()):
++        from vllm.platforms.rocm import on_gfx90a
++        cdna2_decode_requested = on_gfx90a()
+     if (
+         g128_gluon_mode in ("1", "32", "64")
+         and use_3d
+@@ -1530,7 +1589,12 @@
+         and g8_k_scale.shape[-1] == 2
+         and head_size == 256
+         and num_queries_per_kv == 6
+-        and num_kv_heads == 1
++        and (num_kv_heads == 1 or (cdna2_decode_requested and (
++            num_kv_heads == 4 or (
++                num_kv_heads == 2
++                and os.environ.get("VLLM_MI210_TP2_CDNA2") == "1"
++            )
++        )))
+         and BLOCK_Q == 2
+         and q.dtype == torch.bfloat16
+         and q.stride(2) == 1
+@@ -1556,7 +1620,13 @@
+         and block_table.stride(1) == 1
+     ):
+         if g128_gluon_mode != "32":
+-            from vllm.v1.attention.ops.gfx908_g128_gluon_m64 import g128_core
++            use_cdna2_decode = cdna2_decode_requested
++            if use_cdna2_decode:
++                from vllm.v1.attention.ops.gfx90a_g128_gluon_decode import (
++                    g128_core_cdna2 as g128_core,
++                )
++            else:
++                from vllm.v1.attention.ops.gfx908_g128_gluon_m64 import g128_core
+ 
+             query_block = 10
+             num_warps = 4
+@@ -1579,6 +1649,44 @@
+             else {}
+         )
+ 
++        decode_reduce_tile = TILE_SIZE_DECODE
++        if g128_gluon_mode != "32" and use_cdna2_decode:
++            decode_reduce_tile = int(os.environ.get("VLLM_G128_DECODE_CDNA2_TILE", "32"))
++            if decode_reduce_tile not in (32, 64) or block_size % decode_reduce_tile:
++                raise ValueError("CDNA2 decode tile must divide the KV page")
++            mma_kwargs["KV_TILE"] = decode_reduce_tile
++            from vllm.v1.attention.ops.mi210_split_tuning import (
++                validate_mi210_query_tile,
++            )
++            query_block = validate_mi210_query_tile(
++                os.environ.get("VLLM_MI210_G128_QUERY_TILE", "10")
++            )
++            mma_kwargs["Q_TOKENS"] = query_block
++            mma_kwargs["Q_ROWS"] = (32 if query_block == 5 else
++                                    128 if query_block == 16 else 64)
++            num_warps = 2 if query_block == 5 else 4
++            if (query_block == 5
++                    and os.environ.get("VLLM_MI210_TARGET_WAVE_LAYOUT") == "1"):
++                num_warps = 4
++                mma_kwargs["MMA_WARPS_N"] = 2
++                if not globals().get("_MI210_WAVE_REPORTED"):
++                    print("[MI210-WAVE] target query5 uses 4 waves, MFMA 2x2", flush=True)
++                    globals()["_MI210_WAVE_REPORTED"] = True
++            mma_kwargs["NUM_WARPS"] = num_warps
++            mma_kwargs["QK_INT8"] = os.environ.get("VLLM_MI210_INT8_QK", "0") == "1"
++            if (os.environ.get("VLLM_MI210_QKPV_INTERLEAVE", "0") == "1"
++                    and query_block == 5 and decode_reduce_tile == 64
++                    and num_warps == 2 and num_queries_per_kv == 6
++                    and _m64_mode == "bf16" and mma_kwargs["QK_INT8"]):
++                from vllm.v1.attention.ops.gfx90a_g128_gluon_qkpv import (
++                    g128_core_cdna2 as g128_core,
++                )
++                mma_kwargs["KV_VECTOR"] = 4
++                mma_kwargs["MMA_WARPS_N"] = 1
++                if not globals().get("_MI210_QKPV_REPORTED"):
++                    print("[MI210-QKPV] query5 INT8-QK sequential QK/PV, "
++                          "2 waves, KV vector4", flush=True)
++                    globals()["_MI210_QKPV_REPORTED"] = True
+         g128_core[(
+             q.shape[0] // query_block + num_seqs,
+             num_kv_heads,
+@@ -1632,7 +1740,7 @@
+                 OUT_STRIDE1=out.stride(1),
+                 H=num_query_heads,
+                 SPLITS=actual_num_splits,
+-                TILE=TILE_SIZE_DECODE,
++                TILE=decode_reduce_tile,
+                 D=head_size,
+                 num_warps=4,
+             )
+@@ -1649,7 +1757,7 @@
+             output_stride_0=out.stride(0),
+             output_stride_1=out.stride(1),
+             block_table_stride=block_table.stride(0),
+-            TILE_SIZE=TILE_SIZE_DECODE,
++            TILE_SIZE=decode_reduce_tile,
+             HEAD_SIZE=head_size,
+             HEAD_SIZE_PADDED=head_size_padded,
+             query_start_len_ptr=cu_seqlens_q,
+@@ -1664,6 +1772,11 @@
+     # decode core's math reaches ~8x that on the same packed format. Same
+     # guard structure as the decode core, inverted to the 2D (prefill-
+     # shaped) batch: 64 query tokens x one head per CTA, no split-K.
++    cdna2_prefill_requested = False
++    if (os.environ.get("VLLM_G128_PREFILL_CDNA2") == "1"
++            and current_platform.is_rocm()):
++        from vllm.platforms.rocm import on_gfx90a
++        cdna2_prefill_requested = on_gfx90a()
+     if (
+         os.environ.get("VLLM_G128_PREFILL_GLUON") == "1"
+         and not use_3d
+@@ -1673,7 +1786,12 @@
+         and g8_k_scale.shape[-1] == 2
+         and head_size == 256
+         and num_queries_per_kv == 6
+-        and num_kv_heads == 1
++        and (num_kv_heads == 1 or (cdna2_prefill_requested and (
++            num_kv_heads == 4 or (
++                num_kv_heads == 2
++                and os.environ.get("VLLM_MI210_TP2_CDNA2") == "1"
++            )
++        )))
+         and q.dtype == torch.bfloat16
+         and q.stride(2) == 1
+         and out.stride(2) == 1
+@@ -1697,9 +1815,15 @@
+         and g8_k_scale.stride() == g8_v_scale.stride()
+         and block_table.stride(1) == 1
+     ):
+-        from vllm.v1.attention.ops.gfx908_g128_gluon_prefill import (
+-            g128_prefill_core,
+-        )
++        use_cdna2_prefill = cdna2_prefill_requested
++        if use_cdna2_prefill:
++            from vllm.v1.attention.ops.gfx90a_g128_gluon_prefill import (
++                g128_prefill_core_cdna2 as g128_prefill_core,
++            )
++        else:
++            from vllm.v1.attention.ops.gfx908_g128_gluon_prefill import (
++                g128_prefill_core,
++            )
+ 
+         # gfx908 fp16 MFMA runs at 2x the bf16 rate (measured 1.98x,
+         # scripts/bench_mfma_rate.py; CDNA1 quirk). int8 K/V values and
+@@ -1753,6 +1877,12 @@
+             )
+             return
+ 
++        cdna2_kwargs = {}
++        if use_cdna2_prefill:
++            cdna2_tile = int(os.environ.get("VLLM_G128_PREFILL_CDNA2_TILE", "32"))
++            if cdna2_tile not in (32, 64, 128) or block_size % cdna2_tile:
++                raise ValueError("CDNA2 prefill tile must divide the KV page")
++            cdna2_kwargs["KV_TILE"] = cdna2_tile
+         g128_prefill_core[(
+             q.shape[0] // 64 + num_seqs,
+             num_query_heads,
+@@ -1783,6 +1913,7 @@
+             WIDE_KV=(
+                 os.environ.get("VLLM_G128_PREFILL_WIDEKV", "0") == "1"
+             ),
++            **cdna2_kwargs,
+             num_warps=4,
+         )
+         return

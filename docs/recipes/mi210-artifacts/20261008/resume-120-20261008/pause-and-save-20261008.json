@@ -1,0 +1,10 @@
+{
+  "status": "PAUSED_BY_USER_SAVE_AND_GITHUB_PUBLICATION_AUTHORIZED",
+  "selected_container": "mi210-qkpv-screen-20261008-control-after",
+  "selected_base_image": "sha256:841fda7250efc5058da22551a6b54f271aeeb0b109b77d5affdcf1d2919c71b7",
+  "selected_generation_median_tps": 102.56088173348361,
+  "scope": "48,081 input, 512 output, C1, exclude TTFT, 5 repetitions",
+  "test_status": "52/52 constrained; 52/52 diverse identical; text/vision smoke; 16/16 concurrent; 3/3 120K retrieval; 120K generation complete",
+  "optimization_target_120_110": "NOT_REACHED",
+  "new_tests": "DO_NOT_START_UNTIL_USER_RESUMES"
+}

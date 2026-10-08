@@ -1428,19 +1428,25 @@ def unified_attention(
     if launch_num_stages is not None:
         launch_kwargs["num_stages"] = launch_num_stages
 
+    mi210_draft_mode = False
+    if (os.environ.get("VLLM_MI210_DRAFT_GLUON") == "1"
+            and current_platform.is_rocm()):
+        from vllm.platforms.rocm import on_gfx90a
+        mi210_draft_mode = on_gfx90a()
+
     # DFlash2's noncausal sliding verify attends only to the tail window.
     # Split that window across CTAs instead of scanning the full 32k prefix.
     _draft_gluon_conds = (
-        os.environ.get("VLLM_G128_DRAFT_GLUON") == "1",
+        os.environ.get("VLLM_G128_DRAFT_GLUON") == "1" or mi210_draft_mode,
         use_3d,
         use_g8,
         kv_quant_mode == KVQuantMode.INT8_BLOCK_G128,
         use_g8 and g8_k_scale.shape[-1] == 1,
         head_size == 128,
         num_queries_per_kv == 4,
-        num_kv_heads == 2,
+        num_kv_heads == (8 if mi210_draft_mode else 2),
         BLOCK_Q == 4,
-        max_seqlen_q <= 8,
+        max_seqlen_q <= (16 if mi210_draft_mode else 8),
         q.dtype == torch.bfloat16,
         q.stride(2) == 1,
         block_size % 32 == 0,
@@ -1486,7 +1492,22 @@ def unified_attention(
               f"seqs={num_seqs} fires={all(_draft_gluon_conds)} "
               f"miss={_miss}", flush=True)
     if all(_draft_gluon_conds):
-        from vllm.v1.attention.ops.gfx908_g128_gluon_draft import draft_g128_core
+        draft_kwargs = {}
+        if mi210_draft_mode:
+            from vllm.v1.attention.ops.gfx90a_g128_gluon_draft import draft_g128_core
+            from vllm.v1.attention.ops.mi210_split_tuning import validate_mi210_splits
+            capacity = min(softmax_segm_output.shape[2], softmax_segm_max.shape[2],
+                           softmax_segm_expsum.shape[2])
+            actual_num_splits = validate_mi210_splits(
+                os.environ.get("VLLM_MI210_DRAFT_SPLITS", "16"), capacity)
+            draft_kwargs = dict(NUM_WARPS=4, MMA_WARPS_N=2)
+            if not globals().get("_MI210_DRAFT_REPORTED"):
+                print(f"[MI210-DRAFT] TP1 GQA4 BF16/G128 SWA enabled; "
+                      f"maxq={max_seqlen_q} window={sliding_window_val} "
+                      f"block={block_size} splits={actual_num_splits}", flush=True)
+                globals()["_MI210_DRAFT_REPORTED"] = True
+        else:
+            from vllm.v1.attention.ops.gfx908_g128_gluon_draft import draft_g128_core
 
         # GOALOPT: fp16 MFMA at 2x the bf16 rate on gfx908. The draft core
         # dequantizes K/V explicitly, so fp16 keeps the same exact values
@@ -1494,7 +1515,8 @@ def unified_attention(
         # scales; gates decide). VLLM_G128_DRAFT_GLUON_MMA: fp16 | bf16.
         from triton.experimental.gluon import language as _gl
 
-        _draft_mode = os.environ.get("VLLM_G128_DRAFT_GLUON_MMA", "fp16")
+        _draft_mode = ("bf16" if mi210_draft_mode else
+                       os.environ.get("VLLM_G128_DRAFT_GLUON_MMA", "fp16"))
         _draft_dt = _gl.float16 if _draft_mode == "fp16" else _gl.bfloat16
 
         draft_g128_core[(
@@ -1527,6 +1549,7 @@ def unified_attention(
             MMA_DT=_draft_dt,
             MMA_FP16=(_draft_mode == "fp16"),
             num_warps=4,
+            **draft_kwargs,
         )
         reduce_segments[(q.shape[0], num_query_heads)](
             output_ptr=out,
@@ -1642,8 +1665,28 @@ def unified_attention(
             mma_kwargs["Q_ROWS"] = (32 if query_block == 5 else
                                     128 if query_block == 16 else 64)
             num_warps = 2 if query_block == 5 else 4
+            if (query_block == 5
+                    and os.environ.get("VLLM_MI210_TARGET_WAVE_LAYOUT") == "1"):
+                num_warps = 4
+                mma_kwargs["MMA_WARPS_N"] = 2
+                if not globals().get("_MI210_WAVE_REPORTED"):
+                    print("[MI210-WAVE] target query5 uses 4 waves, MFMA 2x2", flush=True)
+                    globals()["_MI210_WAVE_REPORTED"] = True
             mma_kwargs["NUM_WARPS"] = num_warps
             mma_kwargs["QK_INT8"] = os.environ.get("VLLM_MI210_INT8_QK", "0") == "1"
+            if (os.environ.get("VLLM_MI210_QKPV_INTERLEAVE", "0") == "1"
+                    and query_block == 5 and decode_reduce_tile == 64
+                    and num_warps == 2 and num_queries_per_kv == 6
+                    and _m64_mode == "bf16" and mma_kwargs["QK_INT8"]):
+                from vllm.v1.attention.ops.gfx90a_g128_gluon_qkpv import (
+                    g128_core_cdna2 as g128_core,
+                )
+                mma_kwargs["KV_VECTOR"] = 4
+                mma_kwargs["MMA_WARPS_N"] = 1
+                if not globals().get("_MI210_QKPV_REPORTED"):
+                    print("[MI210-QKPV] query5 INT8-QK sequential QK/PV, "
+                          "2 waves, KV vector4", flush=True)
+                    globals()["_MI210_QKPV_REPORTED"] = True
         g128_core[(
             q.shape[0] // query_block + num_seqs,
             num_kv_heads,

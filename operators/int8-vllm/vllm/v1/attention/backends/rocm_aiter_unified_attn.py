@@ -709,10 +709,18 @@ class RocmAiterUnifiedAttentionImpl(RocmAttentionImpl):
             )
 
             _segm_kw = {}
+            mi210_draft_segments = False
+            if os.environ.get("VLLM_MI210_DRAFT_GLUON") == "1":
+                from vllm.platforms.rocm import on_gfx90a
+                mi210_draft_segments = (
+                    on_gfx90a() and self.num_heads == 32
+                    and self.num_kv_heads == 8 and self.head_size == 128
+                    and max_seqlen_q <= 16
+                )
             if (
-                os.environ.get("VLLM_G128_DRAFT_GLUON") == "1"
+                ((os.environ.get("VLLM_G128_DRAFT_GLUON") == "1"
+                  and max_seqlen_q <= 8) or mi210_draft_segments)
                 and getattr(self, "_g8_k", None) is not None
-                and max_seqlen_q <= 8
             ):
                 if not hasattr(self, "_segm_buffers"):
                     self._alloc_segm_buffers(kv_cache.device)
